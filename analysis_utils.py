@@ -5,23 +5,6 @@ import pandas as pd
 from scipy.stats import ttest_ind_from_stats
 
 
-def clean_prior_names(df, **kwargs):
-    """
-    :param df: a pandas data frame containing experimental results
-    :return: a pandas data frame containing the same results but with cleaner prior names
-    """
-    df = df.replace('mle', 'MLE')
-    df = df.replace('standard', 'Standard')
-    df = df.replace('standard_alt', 'Standard*')
-    df = df.replace('vamp', 'VAMP')
-    if kwargs['mode'] == 'tex':
-        df = df.replace('vamp_trainable', '$\\text{VAMP}^*$')
-    else:
-        df = df.replace('vamp_trainable', '$\\mathregular{VAMP}^*$')
-    df = df.replace('vbem', 'VBEM')
-    return df
-
-
 def make_clean_method_names(df):
     """
     Cleans prior names and adds a Method column from which plot labels can be created
@@ -29,21 +12,20 @@ def make_clean_method_names(df):
     :return: a pandas data frame containing the same results but with cleaner prior names and new methods column
     """
     # make clean method names for report
-    df = clean_prior_names(df, **{'mode': 'matplotlib'})
     df['Method'] = df['Algorithm'] + ' (' + df['Prior'] + ')'
     df.loc[df.Algorithm == 'Detlefsen', 'Method'] = 'Detlefsen'
     df.loc[df.Algorithm == 'Detlefsen (fixed)', 'Method'] = 'Detlefsen (fixed)'
     return df
 
 
-def build_table(pickle_files, metric, order, max_cols, post_fix='', process_fn=None, transpose=False):
+def build_table(results, metric, order, max_cols, process_fn=None, transpose=False):
     """
-    :param pickle_files: list of pickle files to include in table
+    :param results: dictionary of Panda data frames
     :param metric: name of desired metric (must be column in pandas data frame)
     :param order: how to order best results
     :param max_cols: max columns per row
-    :param post_fix: needed to handle files of the form *_uci_[name]_[post-fix].pkl
     :param process_fn: optional processing functions
+    :param transpose: whether to transpose the table
     :return: 
     """
     if process_fn is None:
@@ -53,10 +35,9 @@ def build_table(pickle_files, metric, order, max_cols, post_fix='', process_fn=N
     # aggregate results into table
     table = None
     test_table = None
-    for result in pickle_files:
+    for exp, log in results.items():
 
         # load logger
-        log = pd.read_pickle(result)
         n_trials = max(log.index) + 1
         if n_trials < 2:
             continue
@@ -67,12 +48,11 @@ def build_table(pickle_files, metric, order, max_cols, post_fix='', process_fn=N
 
         # compute means and standard deviations over methods
         mean = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].mean())
-        mean = mean.rename(columns={metric: 'mean'}).sort_values('Algorithm')
+        mean = mean.rename(columns={metric: 'mean'}).sort_values(['Algorithm', 'Prior'])
         std = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].std(ddof=1))
-        std = std.rename(columns={metric: 'std'}).sort_values('Algorithm')
+        std = std.rename(columns={metric: 'std'}).sort_values(['Algorithm', 'Prior'])
 
         # build table
-        exp = result.split('uci_')[-1].split(post_fix + '.pkl')[0]
         df = pd.DataFrame(mean['mean'].round(3).astype('str') + '$\\pm$' + std['std'].round(3).astype('str'), columns=[exp])
 
         # get top performer

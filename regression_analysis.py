@@ -5,24 +5,28 @@ import pandas as pd
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from regression_data import generate_toy_data
-from analysis_utils import clean_prior_names, make_clean_method_names, build_table
+from regression_data import generate_toy_data, REGRESSION_DATA
+from regression_experiments_v2 import RESULTS_DIR
+from analysis_utils import make_clean_method_names, build_table
 
 # enable background tiles on plots
 sns.set(color_codes=True)
 
 
-def regression_subplot(alg, prior, ll_logger, data_logger, mv_logger, ax, color):
+def query_string(alg, prior):
+    return "Algorithm == '" + alg + "' and Prior == '" + prior + "'"
 
+
+def regression_subplot(alg, prior, ll_logger, data_logger, mv_logger, ax, color):
     # get best performance for this algorithm/prior combination
-    i_best = ll_logger.query("Algorithm == '" + alg + "' and Prior == '" + prior + "'")['LL'].idxmax()
+    i_best = ll_logger.query(query_string(alg, prior))['LL'].idxmax()
 
     # plot the training data
-    data = data_logger.query("Algorithm == '" + alg + "' and Prior == '" + prior + "'").loc[i_best]
+    data = data_logger.query(query_string(alg, prior)).loc[i_best]
     sns.scatterplot(data['x'], data['y'], ax=ax, color=color)
 
     # plot the model's mean and standard deviation
-    model = mv_logger.query("Algorithm == '" + alg + "' and Prior == '" + prior + "'").loc[i_best]
+    model = mv_logger.query(query_string(alg, prior)).loc[i_best]
     ax.plot(model['x'], model['mean(y|x)'], color=color)
     ax.fill_between(model['x'],
                     model['mean(y|x)'] - 2 * model['std(y|x)'],
@@ -65,9 +69,11 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
     colors = prop_cycle.by_key()['color']
 
     # plot toy regression subplots
-    for i, prior in enumerate(['N/A', 'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*']):
+    i = -1
+    for prior in ['N/A', 'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*']:
         if prior not in priors:
             continue
+        i += 1
 
         # first row subplots
         ax = fig.axes[n_rows * i]
@@ -97,8 +103,9 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
         ax = fig.axes[n_rows * i + 2]
         _, _, x_eval, _, true_std = generate_toy_data()
         ax.plot(x_eval, true_std, 'k', label='truth')
-        query = "(Algorithm == '" + alg1 + "' or Algorithm == '" + alg2 + "') and Prior == '" + prior + "'"
-        sns.lineplot(x='x', y='std(y|x)', hue='Method', ci='sd', data=mv_logger.query(query), ax=ax)
+        data = mv_logger.query(query_string(alg1, prior))
+        data = data.append(mv_logger.query(query_string(alg2, prior)))
+        sns.lineplot(x='x', y='std(y|x)', hue='Method', ci='sd', data=data, ax=ax)
         ax.legend().remove()
         ax.set_xlim([-5, 15])
         ax.set_ylim([0, 6])
@@ -110,11 +117,10 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
 
 
 def toy_regression_analysis():
-
     # get all the pickle files
-    data_pickles = set(glob.glob(os.path.join('resultsV2', 'toy', '*_data.pkl')))
-    mv_pickles = set(glob.glob(os.path.join('resultsV2', 'toy', '*_mv.pkl')))
-    ll_pickles = (set(glob.glob(os.path.join('resultsV2', 'toy', '*.pkl'))) - data_pickles) - mv_pickles
+    data_pickles = set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*_data.pkl')))
+    mv_pickles = set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*_mv.pkl')))
+    ll_pickles = (set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*.pkl'))) - data_pickles) - mv_pickles
 
     # aggregate results into single data frame
     ll_logger = pd.DataFrame()
@@ -129,6 +135,7 @@ def toy_regression_analysis():
 
     # generate plot
     fig = toy_regression_plot(ll_logger, data_logger, mv_logger)
+    fig.savefig(os.path.join('assets', 'fig_toy.png'))
     fig.savefig(os.path.join('assets', 'fig_toy.pdf'))
 
 
@@ -141,37 +148,32 @@ def only_standards(df, **kwargs):
 
 
 def uci_regression_analysis():
-
-    # get list of UCI experiments
-    pickles = glob.glob(os.path.join('results', 'regression_uci_*.pkl'))
-    pickles.sort()
-
     # print result tables
-    for mode in ['10000', 'full']:
+    for iterations in [200000]:
+
+        # experiment directory
+        experiment_dir = os.path.join(RESULTS_DIR, 'regression_uci_{:d}'.format(iterations))
+
+        # load results for each data set
+        results = dict()
+        for dataset in REGRESSION_DATA.keys():
+            result_dir = os.path.join(experiment_dir, dataset)
+            if os.path.exists(result_dir):
+                logger = pd.DataFrame()
+                for p in glob.glob(os.path.join(result_dir, '*.pkl')):
+                    logger = logger.append(pd.read_pickle(p))
+                results.update({dataset: logger})
+
+        # make latex tables
         max_cols = 5
-        process_fn = [clean_prior_names]
-        if mode == '10000':
-            post_fix = '_10000'
-            results = [result for result in pickles if mode in result]
-        else:
-            post_fix = ''
-            results = [result for result in pickles if '10000' not in result and 'full' not in result]
-        with open(os.path.join('assets', 'regression_uci_ll' + post_fix + '.tex'), 'w') as f:
-            print(build_table(results, 'LL', 'max', max_cols, post_fix=post_fix, process_fn=process_fn), file=f)
-        with open(os.path.join('assets', 'regression_uci_mae' + post_fix + '.tex'), 'w') as f:
-            print(build_table(results, 'MAE', 'min', max_cols, post_fix=post_fix, process_fn=process_fn), file=f)
-        with open(os.path.join('assets', 'regression_uci_rmse' + post_fix + '.tex'), 'w') as f:
-            print(build_table(results, 'RMSE', 'min', max_cols, post_fix=post_fix, process_fn=process_fn), file=f)
-
-    # print small table for main body
-    process_fn = [clean_prior_names, exclude_log_normal]
-    with open(os.path.join('assets', 'regression_uci_ll_short.tex'), 'w') as f:
-        print(build_table(results, 'LL', 'max', max_cols, post_fix=post_fix, process_fn=process_fn), file=f)
-
-    # print small table for main body
-    process_fn = [clean_prior_names, exclude_log_normal, only_standards]
-    with open(os.path.join('assets', 'regression_standard_priors.tex'), 'w') as f:
-        print(build_table(results, 'LL', None, max_cols, post_fix=post_fix, process_fn=process_fn, transpose=True), file=f)
+        with open(os.path.join('assets', 'NEWregression_uci_ll.tex'), 'w') as f:
+            print(build_table(results, 'LL', 'max', max_cols, process_fn=[]), file=f)
+        with open(os.path.join('assets', 'NEWregression_uci_rmse.tex'), 'w') as f:
+            print(build_table(results, 'RMSE', 'min', max_cols, process_fn=[]), file=f)
+        with open(os.path.join('assets', 'NEWregression_uci_ll_short.tex'), 'w') as f:
+            print(build_table(results, 'LL', 'max', max_cols, process_fn=[exclude_log_normal]), file=f)
+        with open(os.path.join('assets', 'NEWregression_uci_rmse_short.tex'), 'w') as f:
+            print(build_table(results, 'RMSE', 'min', max_cols, process_fn=[exclude_log_normal]), file=f)
 
 
 if __name__ == '__main__':

@@ -20,7 +20,6 @@ class RegressionCallback(tf.keras.callbacks.Callback):
                   'LL {:.4f},'.format(logs[prefix + 'LL']),
                   'KL {:.4f}'.format(logs[prefix + 'KL']),
                   'LL Adjusted {:.4f},'.format(logs[prefix + 'LL (adjusted)']),
-                  'MAE {:.4f},'.format(logs[prefix + 'MAE']),
                   'RMSE {:.4f}'.format(np.sqrt(logs[prefix + 'MSE'])))
 
 
