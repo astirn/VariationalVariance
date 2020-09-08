@@ -176,14 +176,19 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     n_trials = 5 if dataset in {'protein', 'year'} else 20
     batch_size = 500 if dataset == 'toy' else 512
 
+    # establish experiment directory
+    experiment_dir = 'regression_toy' if dataset == 'toy' else 'regression_uci'
+    experiment_dir += '_{:d}'.format(batch_iterations)
+    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir), exist_ok=True)
+
     # make sure results subdirectory exists
-    os.makedirs(os.path.join(RESULTS_DIR, dataset), exist_ok=True)
+    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir, dataset), exist_ok=True)
 
     # create full file names
-    logger_file = os.path.join(RESULTS_DIR, dataset, base_name + '.pkl')
-    nan_file = os.path.join(RESULTS_DIR, dataset, base_name + '_nan_log.txt')
-    data_file = os.path.join(RESULTS_DIR, dataset, base_name + '_data.pkl')
-    mv_file = os.path.join(RESULTS_DIR, dataset, base_name + '_mv.pkl')
+    logger_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '.pkl')
+    nan_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_nan_log.txt')
+    data_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_data.pkl')
+    mv_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_mv.pkl')
 
     # load results if we are resuming
     if mode == 'resume' and os.path.exists(logger_file):
@@ -191,7 +196,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
         if dataset == 'toy':
             mv_logger = MeanVarianceLogger(df_data=pd.read_pickle(data_file), df_eval=pd.read_pickle(mv_file))
         t_start = max(logger.index)
-        print('Resuming at trial {:d}'.format(t_start + 2))
+        print('Resuming', dataset, prior_fam, prior_type, 'at trial {:d}'.format(t_start + 2))
 
     # otherwise, initialize the loggers
     else:
@@ -205,7 +210,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     # loop over the trials
     for t in range(t_start + 1, n_trials):
         if not parallel:
-            print('\n***** Trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
+            print('\n*****', dataset, 'Trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
 
         # set random number seeds
         np.random.seed(t)
@@ -271,9 +276,9 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='Detlefsen', help='prior type')
-    parser.add_argument('--dataset', type=str, default='toy', help='data set name = {toy} union UCI sets')
-    parser.add_argument('--batch_iterations', type=int, default=int(6e3), help='batch iterations')
+    parser.add_argument('--algorithm', type=str, default='Detlefsen', help='algorithm')
+    parser.add_argument('--dataset', type=str, default='boston', help='data set name = {toy} union UCI sets')
+    parser.add_argument('--batch_iterations', type=int, default=int(20e4), help='batch iterations')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--prior_type', type=str, help='prior type')
     parser.add_argument('--a', type=float, help='standard prior parameter')
