@@ -164,12 +164,13 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
     # parse prior type hyper-parameters
     if prior_type == 'Standard' and dataset != 'toy':
-        hyper_params = '_' + kwargs.get('a') + '_' + kwargs.get('b')
+        base_name += ('_' + kwargs.get('a') + '_' + kwargs.get('b'))
+        hyper_params = 'a={:f},b={:f}'.format(kwargs.get('a'), kwargs.get('b'))
     elif 'VAMP' in prior_type or 'VBEM' in prior_type:
-        hyper_params = '_' + str(kwargs.get('k'))
+        base_name += ('_' + str(kwargs.get('k')))
+        hyper_params = 'k={:d}'.format(kwargs.get('k'))
     else:
-        hyper_params = ''
-    base_name += hyper_params
+        hyper_params = None
     base_name = base_name.replace(' ', '').replace('*', 't')
 
     # dataset specific hyper-parameters
@@ -263,7 +264,8 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
                 print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
 
         # save results
-        new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'LL': ll, 'RMSE': rmse}, index=[t])
+        new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'Hyper-Parameters': hyper_params,
+                               'LL': ll, 'RMSE': rmse}, index=[t])
         logger = logger.append(new_df)
         logger.to_pickle(logger_file)
         if dataset == 'toy':
