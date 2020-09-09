@@ -149,7 +149,7 @@ def only_standards(df, **kwargs):
 
 def uci_regression_analysis():
     # print result tables
-    for iterations in [200000]:
+    for iterations in [10000, 200000]:
 
         # experiment directory
         experiment_dir = os.path.join(RESULTS_DIR, 'regression_uci_{:d}'.format(iterations))
@@ -166,13 +166,13 @@ def uci_regression_analysis():
 
         # make latex tables
         max_cols = 5
-        with open(os.path.join('assets', 'NEWregression_uci_ll.tex'), 'w') as f:
+        with open(os.path.join('assets', 'regression_uci_{:d}_ll.tex'.format(iterations)), 'w') as f:
             print(build_table(results, 'LL', 'max', max_cols, process_fn=[]), file=f)
-        with open(os.path.join('assets', 'NEWregression_uci_rmse.tex'), 'w') as f:
+        with open(os.path.join('assets', 'regression_uci_{:d}_rmse.tex'.format(iterations)), 'w') as f:
             print(build_table(results, 'RMSE', 'min', max_cols, process_fn=[]), file=f)
-        with open(os.path.join('assets', 'NEWregression_uci_ll_short.tex'), 'w') as f:
+        with open(os.path.join('assets', 'regression_uci_{:d}_ll_short.tex'.format(iterations)), 'w') as f:
             print(build_table(results, 'LL', 'max', max_cols, process_fn=[exclude_log_normal]), file=f)
-        with open(os.path.join('assets', 'NEWregression_uci_rmse_short.tex'), 'w') as f:
+        with open(os.path.join('assets', 'regression_uci_{:d}_rmse_short.tex'.format(iterations)), 'w') as f:
             print(build_table(results, 'RMSE', 'min', max_cols, process_fn=[exclude_log_normal]), file=f)
 
 

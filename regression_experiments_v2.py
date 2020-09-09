@@ -166,11 +166,11 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     if prior_type == 'Standard' and dataset != 'toy':
         base_name += ('_' + kwargs.get('a') + '_' + kwargs.get('b'))
         hyper_params = 'a={:f},b={:f}'.format(kwargs.get('a'), kwargs.get('b'))
-    elif 'VAMP' in prior_type or 'VBEM' in prior_type:
+    elif 'VAMP' in prior_type or prior_type == 'VBEM*':
         base_name += ('_' + str(kwargs.get('k')))
         hyper_params = 'k={:d}'.format(kwargs.get('k'))
     else:
-        hyper_params = None
+        hyper_params = 'None'
     base_name = base_name.replace(' ', '').replace('*', 't')
 
     # dataset specific hyper-parameters
