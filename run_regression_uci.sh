@@ -10,14 +10,13 @@ MODE="resume"
 N=4
 
 # run UCI regression experiments
-#declare -a BatchIterations=(10000 200000)
-declare -a BatchIterations=(10000)
+declare -a BatchIterations=(10000 200000)
 declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
 declare -a Algorithms=("Gamma-Normal" "LogNormal-Normal")
 declare -a PriorTypes=("MLE" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM*")
 for iters in "${BatchIterations[@]}"; do
   for data in "${Datasets[@]}"; do
-#    python regression_experiments_v2.py --dataset "$data" --algorithm "Detlefsen" --batch_iterations $iters --mode $MODE
+    python regression_experiments_v2.py --dataset "$data" --algorithm "Detlefsen" --batch_iterations $iters --mode $MODE
     for alg in "${Algorithms[@]}"; do
       for prior in "${PriorTypes[@]}"; do
 
