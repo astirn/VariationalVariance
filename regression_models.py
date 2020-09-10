@@ -60,7 +60,7 @@ class NormalRegressionWithVariationalPrecision(tf.keras.Model):
             self.u = tf.Variable(initial_value=kwargs.get('u'), dtype=tf.float32, trainable=trainable, name='u')
         elif self.prior_type == 'VBEM':
             # fixed prior parameters for precision
-            params = np.arange(start=0.5, stop=3, step=0.1)
+            params = [0.05, 0.1, 0.25, 0.5, 0.75, 1., 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
             uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
             u = tf.expand_dims(uv[0], axis=-1)
             v = tf.expand_dims(uv[1], axis=-1)

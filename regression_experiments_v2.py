@@ -62,7 +62,7 @@ class MeanVarianceLogger(object):
         self.df_eval = self.df_eval.append(df_new)
 
 
-def train_and_eval(dataset, prior_type, prior_fam, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs):
+def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs):
 
     # toy data configuration
     if dataset == 'toy':
@@ -140,7 +140,7 @@ def train_and_eval(dataset, prior_type, prior_fam, epochs, batch_size, x_train, 
     mdl.num_mc_samples = 2000
     mdl_mean, mdl_std = mdl.posterior_predictive_mean(x_eval).numpy(), mdl.posterior_predictive_std(x_eval).numpy()
 
-    return ll, rmse, mdl_mean, mdl_std, nan_detected
+    return ll, rmse, mdl_mean, mdl_std, nan_detected, mdl
 
 
 def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
@@ -164,7 +164,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
     # parse prior type hyper-parameters
     if prior_type == 'Standard' and dataset != 'toy':
-        base_name += ('_' + kwargs.get('a') + '_' + kwargs.get('b'))
+        base_name += ('_' + str(kwargs.get('a')) + '_' + str(kwargs.get('b')))
         hyper_params = 'a={:f},b={:f}'.format(kwargs.get('a'), kwargs.get('b'))
     elif 'VAMP' in prior_type or prior_type == 'VBEM*':
         base_name += ('_' + str(kwargs.get('k')))
@@ -190,14 +190,17 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     nan_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_nan_log.txt')
     data_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_data.pkl')
     mv_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_mv.pkl')
+    prior_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, base_name + '_prior.pkl')
 
     # load results if we are resuming
     if mode == 'resume' and os.path.exists(logger_file):
         logger = pd.read_pickle(logger_file)
         if dataset == 'toy':
             mv_logger = MeanVarianceLogger(df_data=pd.read_pickle(data_file), df_eval=pd.read_pickle(mv_file))
+        if prior_type == 'VBEM':
+            vbem_logger = pd.read_pickle(prior_file)
         t_start = max(logger.index)
-        print('Resuming', dataset, prior_fam, prior_type, 'at trial {:d}'.format(t_start + 2))
+        print('Resuming', dataset, algorithm, prior_type, 'at trial {:d}'.format(t_start + 2))
 
     # otherwise, initialize the loggers
     else:
@@ -206,6 +209,8 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             os.remove(nan_file)
         if dataset == 'toy':
             mv_logger = MeanVarianceLogger()
+        if prior_type == 'VBEM':
+            vbem_logger = pd.DataFrame(columns=['a', 'b', 'wins'])
         t_start = -1
 
     # loop over the trials
@@ -257,11 +262,22 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             ll, rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size)
 
         else:
-            ll, rmse, mean, std, nans = train_and_eval(dataset, prior_type, prior_fam, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs)
+            ll, rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
+                                                            epochs,  batch_size, x_train, y_train, x_eval, y_eval,
+                                                            parallel, **kwargs)
             print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials), 'LL Exact:', ll, 'RMSE:', rmse)
             if nans:
                 print('**** NaN Detected ****')
                 print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
+
+            # save top priors for VBEM
+            if prior_type == 'VBEM':
+                indices, counts = np.unique(np.argmax(mdl.pi(x_eval), axis=1), return_counts=True)
+                for i, c in zip(indices, counts):
+                    a = tf.nn.softplus(mdl.u[i]).numpy()[0]
+                    b = tf.nn.softplus(mdl.v[i]).numpy()[0]
+                    vbem_logger = vbem_logger.append(pd.DataFrame({'a': a, 'b': b, 'wins': c}, index=[t]))
+                    vbem_logger.to_pickle(prior_file)
 
         # save results
         new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'Hyper-Parameters': hyper_params,
