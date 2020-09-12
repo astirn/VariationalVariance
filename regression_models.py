@@ -61,9 +61,16 @@ class NormalRegressionWithVariationalPrecision(tf.keras.Model):
         elif self.prior_type == 'VBEM':
             # fixed prior parameters for precision
             params = [0.05, 0.1, 0.25, 0.5, 0.75, 1., 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-            uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
-            u = tf.expand_dims(uv[0], axis=-1)
-            v = tf.expand_dims(uv[1], axis=-1)
+            if self.prior_fam == 'Gamma':
+                uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
+                u = tf.expand_dims(uv[0], axis=-1)
+                v = tf.expand_dims(uv[1], axis=-1)
+            else:
+                uv = np.array(tuple(itertools.product(params, params)), dtype=np.float32).T
+                mean = uv[0] / uv[1]
+                var = uv[0] / uv[1] ** 2
+                u = tf.expand_dims(tf.math.log(mean ** 2 / (mean ** 2 + var) ** 0.5), axis=-1)
+                v = softplus_inverse(tf.expand_dims(tf.math.log(1 + var / (mean ** 2)), axis=-1))
             self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=False, name='u')
             self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=False, name='v')
         elif self.prior_type == 'VBEM*':
@@ -274,7 +281,7 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--prior', type=str, default='VBEM*',
+    parser.add_argument('--prior', type=str, default='VBEM',
                         help='{MLE, Standard, VAMP, VAMP*, xVAMP, xVAMP*, VBEM, VBEM*}')
     args = parser.parse_args()
 
