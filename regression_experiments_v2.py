@@ -22,7 +22,7 @@ from experiment_regression import detlefsen_uci_baseline
 from regression_models import prior_params, NormalRegressionWithVariationalPrecision
 
 # results directory
-RESULTS_DIR = 'resultsV2'
+RESULTS_DIR = 'resultsV3'
 
 
 class MeanVarianceLogger(object):
@@ -118,7 +118,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     callbacks = [RegressionCallback(epochs, parallel)]
     if early_stopping:
         callbacks += [tf.keras.callbacks.EarlyStopping(monitor='val_LL', min_delta=1e-4, patience=500, mode='max')]
-    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=0.5), loss=[None])
+    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=[None])
     hist = mdl.fit(ds_train, validation_data=ds_eval, epochs=epochs, verbose=0, callbacks=callbacks)
 
     # test for NaN's
@@ -216,7 +216,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     # loop over the trials
     for t in range(t_start + 1, n_trials):
         if not parallel:
-            print('\n*****', dataset, 'Trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
+            print('\n*****', dataset, 'trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
 
         # set random number seeds
         np.random.seed(t)

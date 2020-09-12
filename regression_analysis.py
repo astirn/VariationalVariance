@@ -118,9 +118,9 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
 
 def toy_regression_analysis():
     # get all the pickle files
-    data_pickles = set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*_data.pkl')))
-    mv_pickles = set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*_mv.pkl')))
-    ll_pickles = (set(glob.glob(os.path.join('resultsV2', '*', 'toy', '*.pkl'))) - data_pickles) - mv_pickles
+    data_pickles = set(glob.glob(os.path.join(RESULTS_DIR, '*', 'toy', '*_data.pkl')))
+    mv_pickles = set(glob.glob(os.path.join(RESULTS_DIR, '*', 'toy', '*_mv.pkl')))
+    ll_pickles = (set(glob.glob(os.path.join(RESULTS_DIR, '*', 'toy', '*.pkl'))) - data_pickles) - mv_pickles
 
     # aggregate results into single data frame
     ll_logger = pd.DataFrame()
