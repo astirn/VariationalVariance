@@ -32,6 +32,9 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
         process_fn = []
     assert order in {'max', 'min', None}
 
+    # initialize champions club
+    champions_club = None
+
     # aggregate results into table
     table = None
     test_table = None
@@ -52,6 +55,12 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
         std = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].std(ddof=1))
         std = std.rename(columns={metric: 'std'}).sort_values(['Algorithm', 'Prior'])
 
+        # initialize champions club if needed
+        if champions_club is None:
+            champions_club = mean.copy(deep=True)
+            champions_club[metric + ' Wins'] = 0
+            del champions_club['mean']
+
         # build table
         df = pd.DataFrame(mean['mean'].round(3).astype('str') + '$\\pm$' + std['std'].round(3).astype('str'), columns=[exp])
 
@@ -71,6 +80,7 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
             for i in range(df.shape[0]):
                 if i == i_best or p[i] >= 0.05:
                     df.loc[mean.index[i]] = '\\textbf{' + df.loc[mean.index[i]] + '}'
+                    champions_club.loc[mean.index[i]] += 1
 
         # append experiment to results table
         table = df if table is None else table.join(df)
@@ -112,4 +122,22 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
     for i in range(1, len(tables)):
         tables[i] = '\\midrule' + tables[i].split('\\toprule')[-1]
 
-    return ''.join(tables)
+    return ''.join(tables), champions_club
+
+
+def champions_club_table(champion_clubs):
+    """
+    :param champion_clubs: a list of champion club data frames
+    :return:
+    """
+    assert isinstance(champion_clubs, list)
+    champions_club = pd.concat(champion_clubs, axis=1)
+    for col in champions_club.columns:
+        winning_score = max(champions_club[col])
+        champions_club[col] = champions_club[col].astype('str')
+        for index, row in champions_club.iterrows():
+            if row[col] == str(winning_score):
+                champions_club.loc[index, col] = '\\textbf{' + row[col] + '}'
+            else:
+                champions_club.loc[index, col] = row[col]
+    return champions_club.to_latex(escape=False)
