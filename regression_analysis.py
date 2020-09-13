@@ -145,10 +145,6 @@ def exclude_log_normal(df, **kwargs):
     return df[df.Algorithm != 'LogNormal-Normal']
 
 
-def only_standards(df, **kwargs):
-    return df[(df.Prior == 'Standard') | (df.Prior == 'Standard*')]
-
-
 def uci_regression_analysis():
     # print result tables
     for iterations in [10000, 200000]:

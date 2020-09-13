@@ -13,7 +13,7 @@ N=4
 declare -a BatchIterations=(10000 200000)
 declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
 declare -a Algorithms=("Gamma-Normal" "LogNormal-Normal")
-declare -a PriorTypes=("MLE" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM*")
+declare -a PriorTypes=("MLE" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
 for iters in "${BatchIterations[@]}"; do
   for data in "${Datasets[@]}"; do
     python regression_experiments_v2.py --dataset "$data" --algorithm "Detlefsen" --batch_iterations $iters --mode $MODE
