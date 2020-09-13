@@ -22,7 +22,7 @@ from experiment_regression import detlefsen_uci_baseline
 from regression_models import prior_params, NormalRegressionWithVariationalPrecision
 
 # results directory
-RESULTS_DIR = 'resultsV3'
+RESULTS_DIR = 'resultsV2'
 
 
 class MeanVarianceLogger(object):
@@ -118,7 +118,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     callbacks = [RegressionCallback(epochs, parallel)]
     if early_stopping:
         callbacks += [tf.keras.callbacks.EarlyStopping(monitor='val_LL', min_delta=1e-4, patience=500, mode='max')]
-    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=[None])
+    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=0.5), loss=[None])
     hist = mdl.fit(ds_train, validation_data=ds_eval, epochs=epochs, verbose=0, callbacks=callbacks)
 
     # test for NaN's

@@ -114,8 +114,6 @@ class NormalRegressionWithVariationalPrecision(tf.keras.Model):
 
             # compute prior's mixture proportions
             pi = tf.ones(self.u.shape[0]) / self.u.shape[0] if self.prior_type in {'VAMP', 'VAMP*'} else self.pi(x)
-            log_pi = tf.math.log(tf.expand_dims(pi, axis=0))
-            log_pi = tf.maximum(log_pi, -6)
 
             # compute prior's mixture components
             if 'VAMP' in self.prior_type:
@@ -128,9 +126,9 @@ class NormalRegressionWithVariationalPrecision(tf.keras.Model):
 
             # MC estimate kl-divergence due to pesky log-sum
             p_samples = qp.sample(self.num_mc_samples)
-            p_samples = tf.clip_by_value(p_samples, clip_value_min=1e-20, clip_value_max=tf.float32.max)
             p_samples = tf.tile(tf.expand_dims(p_samples, axis=-2), [1, 1] + pp_c.batch_shape.as_list() + [1])
-            log_pp_c = tf.clip_by_value(pp_c.log_prob(p_samples), clip_value_min=-6, clip_value_max=6)
+            log_pi = tf.math.log(tf.expand_dims(pi, axis=0))
+            log_pp_c = tf.clip_by_value(pp_c.log_prob(p_samples), clip_value_min=tf.float32.min, clip_value_max=100)
             log_pp = tf.reduce_logsumexp(log_pi + log_pp_c, axis=-1)
             dkl = -qp.entropy() - tf.reduce_mean(log_pp, axis=0)
 
