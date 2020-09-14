@@ -177,17 +177,6 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
         prior_type = 'N/A'
         base_name = algorithm
 
-    # parse prior type hyper-parameters
-    if prior_type == 'Standard' and dataset != 'toy':
-        base_name += ('_' + str(kwargs.get('a')) + '_' + str(kwargs.get('b')))
-        hyper_params = 'a={:f},b={:f}'.format(kwargs.get('a'), kwargs.get('b'))
-    elif 'VAMP' in prior_type or prior_type == 'VBEM*':
-        base_name += ('_' + str(kwargs.get('k')))
-        hyper_params = 'k={:d}'.format(kwargs.get('k'))
-    else:
-        hyper_params = 'None'
-    base_name = base_name.replace(' ', '').replace('*', 't')
-
     # dataset specific hyper-parameters
     n_trials = 5 if dataset in {'protein', 'year'} else 20
     batch_size = 500 if dataset == 'toy' else 512
@@ -196,6 +185,26 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     experiment_dir = 'regression_toy' if dataset == 'toy' else 'regression_uci'
     experiment_dir += '_{:d}'.format(batch_iterations)
     os.makedirs(os.path.join(RESULTS_DIR, experiment_dir), exist_ok=True)
+
+    # parse prior type hyper-parameters
+    if prior_type == 'Standard' and dataset != 'toy':
+
+        # if prior parameters not provided, use best discovered parameter set from VBEM
+        if kwargs.get('a') is None or kwargs.get('b') is None:
+            relevant_prior_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, algorithm + '_VBEM_prior.pkl')
+            assert os.path.exists(relevant_prior_file)
+            prior_params = pd.read_pickle(relevant_prior_file)
+            a, b = np.squeeze(pd.DataFrame(prior_params.groupby(['a', 'b'])['wins'].sum().idxmax()).to_numpy())
+            kwargs.update({'a': a, 'b': b})
+
+        base_name += ('_' + str(kwargs.get('a')) + '_' + str(kwargs.get('b')))
+        hyper_params = 'a={:f},b={:f}'.format(kwargs.get('a'), kwargs.get('b'))
+    elif 'VAMP' in prior_type or prior_type == 'VBEM*':
+        base_name += ('_' + str(kwargs.get('k')))
+        hyper_params = 'k={:d}'.format(kwargs.get('k'))
+    else:
+        hyper_params = 'None'
+    base_name = base_name.replace(' ', '').replace('*', 't')
 
     # make sure results subdirectory exists
     os.makedirs(os.path.join(RESULTS_DIR, experiment_dir, dataset), exist_ok=True)
