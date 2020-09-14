@@ -13,13 +13,13 @@ import tensorflow as tf
 from regression_data import generate_toy_data
 from callbacks import RegressionCallback
 
+# import our regression models
+from regression_models import prior_params, NormalRegression, NormalRegressionWithVariationalPrecision
+
 # import Detlefsen baseline model
 sys.path.append(os.path.join(os.getcwd(), 'john-master'))
 from toy_regression import detlefsen_toy_baseline
 from experiment_regression import detlefsen_uci_baseline
-
-# import our regression models
-from regression_models import prior_params, NormalRegressionWithVariationalPrecision
 
 # results directory
 RESULTS_DIR = 'resultsV2'
@@ -100,19 +100,30 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     ds_eval = ds_eval.shuffle(10000, reshuffle_each_iteration=True).batch(batch_size)
 
     # configure the model
-    mdl = NormalRegressionWithVariationalPrecision(d_in=x_train.shape[1],
-                                                   d_hidden=d_hidden,
-                                                   f_hidden=f_hidden,
-                                                   d_out=y_train.shape[1],
-                                                   prior_type=prior_type,
-                                                   prior_fam=prior_fam,
-                                                   y_mean=0.0 if dataset == 'toy' else np.mean(y_train, axis=0),
-                                                   y_var=1.0 if dataset == 'toy' else np.var(y_train, axis=0),
-                                                   a=a,
-                                                   b=b,
-                                                   k=u.shape[0],
-                                                   u=u,
-                                                   n_mc=num_mc_samples)
+    if algorithm in {'Normal', 'Normal-ConstGrad', 'Normal-NormGrad'}:
+        model = NormalRegression
+    else:
+        model = NormalRegressionWithVariationalPrecision
+    if algorithm == 'Normal-ConstGrad':
+        grad_mode = 'constant'
+    elif algorithm == 'Normal-NormGrad':
+        grad_mode = 'normalized'
+    else:
+        grad_mode = None
+    mdl = model(d_in=x_train.shape[1],
+                d_hidden=d_hidden,
+                f_hidden=f_hidden,
+                d_out=y_train.shape[1],
+                prior_type=prior_type,
+                prior_fam=prior_fam,
+                y_mean=0.0 if dataset == 'toy' else np.mean(y_train, axis=0),
+                y_var=1.0 if dataset == 'toy' else np.var(y_train, axis=0),
+                a=a,
+                b=b,
+                k=u.shape[0],
+                u=u,
+                grad_mode=grad_mode,
+                n_mc=num_mc_samples)
 
     # train the model
     callbacks = [RegressionCallback(epochs, parallel)]
@@ -144,7 +155,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
 
 def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
-    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Gamma-Normal', 'LogNormal-Normal'}
+    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Normal-ConstGrad', 'Normal-NormGrad', 'Gamma-Normal', 'LogNormal-Normal'}
     assert not (algorithm == 'Detlefsen (fixed)' and dataset != 'toy')
     assert mode in {'replace', 'resume'}
 
@@ -157,6 +168,10 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
         prior_fam = 'LogNormal'
         prior_type = kwargs.pop('prior_type')
         base_name = algorithm + '_' + prior_type
+    elif algorithm in {'Normal', 'Normal-ConstGrad', 'Normal-NormGrad'}:
+        prior_fam = ''
+        prior_type = 'N/A'
+        base_name = algorithm
     else:
         prior_fam = ''
         prior_type = 'N/A'
