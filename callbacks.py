@@ -5,6 +5,12 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes
 
+VAE_METRIC_NAMES = {'ELBO':     'ELBO',
+                    'ELL':      'Expected Log Likelihood',
+                    'DKL(z)':   '$D_{KL}(q(z|x)||p(z))$',
+                    'DKL(p)':   '$D_{KL}(q(\\lambda|z)||p(\\lambda))$',
+                    'LPPL':     'Log Posterior Predictive Likelihood'}
+
 
 class RegressionCallback(tf.keras.callbacks.Callback):
     def __init__(self, n_epochs, parallel=False):
@@ -59,11 +65,10 @@ class LearningCurveCallback(tf.keras.callbacks.Callback):
 
         # plot VI terms
         row += 1
-        vi_keys = [key for key in logs.keys() if 'vi' in key and 'val_' not in key]
-        vi_keys.sort()
+        vi_keys = [key for key in logs.keys() if key in VAE_METRIC_NAMES.keys() and 'val_' not in key]
         for i, key in enumerate(vi_keys):
             sp = self.fig.add_subplot(num_rows, len(vi_keys), (row - 1) * len(vi_keys) + i + 1)
-            sp.set_title(''.join(key.split(' ')[2:]), fontsize=9)
+            sp.set_title(VAE_METRIC_NAMES[key], fontsize=9)
             sp.plot(self.history[key][1:], label='train')
             sp.plot(self.history['val_' + key][1:], label='test')
             sp.legend()
@@ -124,7 +129,7 @@ class ReconstructionCallback(tf.keras.callbacks.Callback):
                             qz_x = self.model.qz(x)
                             z_mean[k, c] = np.squeeze(qz_x.mean())
                             z_std[k, c] = np.squeeze(qz_x.stddev())
-                            x_mean[k, c], x_std[k, c], x_new[k, c], _ = self.model.posterior_predictive(x=x)
+                            x_mean[k, c], x_std[k, c], x_new[k, c], _ = self.model.posterior_predictive_checks(x=x)
                             x = x_new[k, c]
 
         # plot results
@@ -228,7 +233,7 @@ class LatentVisualizationCallback2D(tf.keras.callbacks.Callback):
                 z = np.concatenate((z, z_new), axis=0)
 
         # generate reconstruction
-        x_latent = self.model.posterior_predictive(z=np.float32(z))[0]
+        x_latent = self.model.posterior_predictive_checks(z=np.float32(z))[0]
 
         # loop over the channels
         x_plot = []

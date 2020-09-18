@@ -168,13 +168,13 @@ class VAE(tf.keras.Model):
                                 tf.constant(np.prod(self.dim_x), dtype=tf.int32)), axis=0)  # event dimension
         return param_shape
 
-    def posterior_predictive(self, x):
+    def posterior_predictive_checks(self, x):
 
         # sample z's variational posterior for monte-carlo estimates
         z_samples = self.qz(x).sample(sample_shape=self.num_mc_samples)
 
         # get posterior predictive distribution
-        px_x = self.px(*self.z_dependent_parameters(z_samples))
+        px_x = self.posterior_predictive(*self.z_dependent_parameters(z_samples), **self.ppc_kwargs())
 
         # compute first and second moments
         x_mean = tf.reshape(tf.reduce_mean(px_x.mean(), axis=0), [-1] + list(self.dim_x))
@@ -186,10 +186,10 @@ class VAE(tf.keras.Model):
 
         return x_mean, x_std, x_new, None
 
-    def posterior_predictive_log_prob(self, x, params):
+    def posterior_predictive_log_prob(self, x, params, **kwargs):
 
         # monte-carlo estimate log posterior predictive likelihood
-        lpp = self.px(*params).log_prob(x)
+        lpp = self.posterior_predictive(*params, **kwargs).log_prob(x)
         return tf.reduce_logsumexp(lpp - tf.math.log(float(self.num_mc_samples)), axis=0)
 
     def call(self, inputs, **kwargs):
@@ -207,7 +207,7 @@ class VAE(tf.keras.Model):
 
         # observe ELBO components
         self.add_metric(elbo, name='ELBO', aggregation='mean')
-        self.add_metric(ll, name='LL', aggregation='mean')
+        self.add_metric(ll, name='ELL', aggregation='mean')
         self.add_metric(dkl_z, name='DKL(z)', aggregation='mean')
         if dkl_p is not None:
             self.add_metric(dkl_p, name='DKL(p)', aggregation='mean')
@@ -245,7 +245,7 @@ class FixedVarianceNormalVAE(VAE):
 
         return (mu,)
 
-    def px(self, mu):
+    def likelihood(self, mu):
         px = tfp.distributions.Normal(loc=mu, scale=self.standard_deviation)
         return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
@@ -258,7 +258,7 @@ class FixedVarianceNormalVAE(VAE):
         mu = self.z_dependent_parameters(z_samples)[0]
 
         # monte-carlo estimate expected log likelihood
-        ell = tf.reduce_mean(self.px(mu).log_prob(x), axis=0)
+        ell = tf.reduce_mean(self.likelihood(mu).log_prob(x), axis=0)
 
         # compute KL divergence w.r.t. p(z)
         dkl_z = qz_x.kl_divergence(self.pz)
@@ -270,6 +270,14 @@ class FixedVarianceNormalVAE(VAE):
         lpp = self.posterior_predictive_log_prob(x, params=(mu,))
 
         return elbo, ell, dkl_z, None, lpp
+
+    @staticmethod
+    def ppc_kwargs():
+        return dict()
+
+    def posterior_predictive(self, mu, **kwargs):
+        px = tfp.distributions.Normal(loc=mu, scale=self.standard_deviation)
+        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
 
 class NormalVAE(VAE):
@@ -315,7 +323,7 @@ class NormalVAE(VAE):
         return mu, sigma
 
     @staticmethod
-    def px(mu, sigma):
+    def likelihood(mu, sigma):
         px = tfp.distributions.Normal(loc=mu, scale=sigma)
         return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
@@ -329,7 +337,7 @@ class NormalVAE(VAE):
 
         # monte-carlo estimate expected log likelihood
         if self.grad_adjust == 'None':
-            ell = tf.reduce_mean(self.px(mu, sigma).log_prob(x), axis=0)
+            ell = tf.reduce_mean(self.likelihood(mu, sigma).log_prob(x), axis=0)
         elif self.grad_adjust == 'Normalized':
             precisions = tf.stop_gradient(sigma ** -2)
             weighted_squared_error = tf.reduce_sum(tf.math.squared_difference(x, mu) * precisions, axis=-1)
@@ -358,6 +366,15 @@ class NormalVAE(VAE):
         lpp = self.posterior_predictive_log_prob(x, params=(mu, sigma))
 
         return elbo, ell, dkl_z, None, lpp
+
+    @staticmethod
+    def ppc_kwargs():
+        return dict()
+
+    @staticmethod
+    def posterior_predictive(mu, sigma, **kwargs):
+        px = tfp.distributions.Normal(loc=mu, scale=sigma)
+        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
 
 class StudentVAE(VAE):
@@ -391,7 +408,7 @@ class StudentVAE(VAE):
 
         return mu, nu, sigma
 
-    def px(self, mu, nu, sigma):
+    def likelihood(self, mu, nu, sigma):
         px = tfp.distributions.StudentT(df=nu + self.min_dof, loc=mu, scale=sigma)
         return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
@@ -404,7 +421,7 @@ class StudentVAE(VAE):
         mu, nu, sigma = self.z_dependent_parameters(z_samples)
 
         # monte-carlo estimate expected log likelihood
-        ell = tf.reduce_mean(self.px(mu, nu, sigma).log_prob(x), axis=0)
+        ell = tf.reduce_mean(self.likelihood(mu, nu, sigma).log_prob(x), axis=0)
 
         # compute KL divergence w.r.t. p(z)
         dkl_z = qz_x.kl_divergence(self.pz)
@@ -416,6 +433,14 @@ class StudentVAE(VAE):
         lpp = self.posterior_predictive_log_prob(x, params=(mu, nu, sigma))
 
         return elbo, ell, dkl_z, None, lpp
+
+    @staticmethod
+    def ppc_kwargs():
+        return dict()
+
+    def posterior_predictive(self, mu, nu, sigma, **kwargs):
+        px = tfp.distributions.StudentT(df=nu + self.min_dof, loc=mu, scale=sigma)
+        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
 
 class VariationalVarianceVAE(VAE):
@@ -486,14 +511,6 @@ class VariationalVarianceVAE(VAE):
     def qp(alpha, beta):
         return tfp.distributions.Independent(tfp.distributions.Gamma(alpha, beta))
 
-    def px(self, mu, alpha, beta, mc_integration=False):
-        if mc_integration: # TODO: WHICH ONE GIVES BEST SAMPLE QUALITY?
-            p_samples = self.gamma(alpha, beta).sample()
-            px = tfp.distributions.Normal(loc=mu, scale=p_samples ** -0.5)
-        else:
-            px = tfp.distributions.StudentT(df=2 * alpha, loc=mu, scale=tf.sqrt(beta / alpha))
-        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
-
     def dkl_precision(self, z_samples, p_samples, alpha, beta, vamp_samples=None):
 
         # variational family q(precision|z)
@@ -558,9 +575,22 @@ class VariationalVarianceVAE(VAE):
         elbo = ell - dkl_z - dkl_p
 
         # log posterior predictive likelihood
-        lpp = self.posterior_predictive_log_prob(x, params=(mu, alpha, beta))
+        lpp = self.posterior_predictive_log_prob(x, params=(mu, alpha, beta), **{'analytic_integration': True})
 
         return elbo, ell, dkl_z, dkl_p, lpp
+
+    @staticmethod
+    def ppc_kwargs():
+        return {'analytic_integration': False}
+
+    def posterior_predictive(self, mu, alpha, beta, **kwargs):
+        assert isinstance(kwargs.get('analytic_integration'), bool)
+        if kwargs.get('analytic_integration'):
+            px = tfp.distributions.StudentT(df=2 * alpha, loc=mu, scale=tf.sqrt(beta / alpha))
+        else:
+            p_samples = self.gamma(alpha, beta).sample()
+            px = tfp.distributions.Normal(loc=mu, scale=p_samples ** -0.5)
+        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
 
 if __name__ == '__main__':
@@ -602,7 +632,7 @@ if __name__ == '__main__':
     # vae = StudentVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
     #                  num_mc_samples=NUM_MC_SAMPLES, min_dof=3)
 
-    # Empirical-Bayes MAP VAE (ours)
+    # Empirical-Bayes MAP VAE (ours) # TODO: is this worth trying again?
     # vae = NormalVAE(dim_x=DIM_X, architecture=ARCH, batch_norm=BATCH_NORM, split_decoder=True, a=A, b=B)
 
     # Variational Variance VAE (ours) + standard prior
@@ -626,7 +656,7 @@ if __name__ == '__main__':
             callbacks=[LearningCurveCallback(train_set),
                        ReconstructionCallback(train_set, info.features['label'].num_classes),
                        LatentVisualizationCallback2D(vae.dim_x, vae.dim_z),
-                       tf.keras.callbacks.EarlyStopping(monitor='val_LL', min_delta=1.0, patience=50, mode='max')])
+                       tf.keras.callbacks.EarlyStopping(monitor='val_LPPL', min_delta=1.0, patience=50, mode='max')])
     print('Done!')
 
     # keep plots open
