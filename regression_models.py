@@ -9,6 +9,7 @@ import tensorflow_probability as tfp
 import seaborn as sns
 from matplotlib import pyplot as plt
 
+from utils_model import softplus_inverse
 from callbacks import RegressionCallback
 from regression_data import generate_toy_data
 
@@ -16,10 +17,6 @@ from regression_data import generate_toy_data
 for gpu in tf.config.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(gpu, enable=True)
 tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
-
-
-def softplus_inverse(x):
-    return tf.math.log(tf.exp(x) - 1)
 
 
 def neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name=None):
