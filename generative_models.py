@@ -168,29 +168,30 @@ class VAE(tf.keras.Model):
                                 tf.constant(np.prod(self.dim_x), dtype=tf.int32)), axis=0)  # event dimension
         return param_shape
 
+    @staticmethod
+    def mixture_proportions(mu):
+        return tfp.distributions.Categorical(logits=tf.transpose(tf.ones(tf.shape(mu)[:2])))
+
+    def posterior_predictive_moments_and_samples(self, params):
+
+        # get posterior predictive distribution
+        px_x = self.posterior_predictive(*params)
+
+        # compute first and second moments
+        x_mean = tf.reshape(px_x.mean(), [-1] + list(self.dim_x))
+        x_std = tf.reshape(px_x.stddev(), [-1] + list(self.dim_x))
+
+        # sample p(x|x)
+        x_new = tf.reshape(px_x.sample(), [-1] + list(self.dim_x))
+
+        return x_mean, x_std, x_new
+
     def posterior_predictive_checks(self, x):
 
         # sample z's variational posterior for monte-carlo estimates
         z_samples = self.qz(x).sample(sample_shape=self.num_mc_samples)
 
-        # get posterior predictive distribution
-        px_x = self.posterior_predictive(*self.z_dependent_parameters(z_samples), **self.ppc_kwargs())
-
-        # compute first and second moments
-        x_mean = tf.reshape(tf.reduce_mean(px_x.mean(), axis=0), [-1] + list(self.dim_x))
-        x_std = tf.reshape(tf.reduce_mean(px_x.stddev(), axis=0), [-1] + list(self.dim_x))
-
-        # approximately sample p(x|x)
-        i_best = tf.argmax(px_x.log_prob(self.flatten(x)), axis=0)
-        x_new = tf.reshape(tf.gather(px_x.sample(), i_best), [-1] + list(self.dim_x))
-
-        return x_mean, x_std, x_new, None
-
-    def posterior_predictive_log_prob(self, x, params, **kwargs):
-
-        # monte-carlo estimate log posterior predictive likelihood
-        lpp = self.posterior_predictive(*params, **kwargs).log_prob(x)
-        return tf.reduce_logsumexp(lpp - tf.math.log(float(self.num_mc_samples)), axis=0)
+        return self.posterior_predictive_moments_and_samples(self.z_dependent_parameters(z_samples))
 
     def call(self, inputs, **kwargs):
         x = inputs['image']
@@ -202,7 +203,7 @@ class VAE(tf.keras.Model):
         x = self.flatten(x)
 
         # variational objective
-        elbo, ll, dkl_z, dkl_p, lppl = self.variational_objective(x, qz_x)
+        elbo, ll, dkl_z, dkl_p, params = self.variational_objective(x, qz_x)
         self.add_loss(-tf.reduce_mean(elbo))
 
         # observe ELBO components
@@ -212,8 +213,14 @@ class VAE(tf.keras.Model):
         if dkl_p is not None:
             self.add_metric(dkl_p, name='DKL(p)', aggregation='mean')
 
-        # observe posterior predictive log likelihood
-        self.add_metric(lppl, name='LPPL', aggregation='mean')
+        # log posterior predictive heuristics
+        self.add_metric(self.posterior_predictive(*params).log_prob(x), name='LPPL', aggregation='mean')
+        # if not kwargs.get('training'):
+        #     x_mean, _, x_new = self.posterior_predictive_moments_and_samples(params)
+        #     rmse_mean = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_mean)), axis=-1))
+        #     rmse_sample = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_new)), axis=-1))
+        #     self.add_metric(rmse_mean, name='RMSE(mean)', aggregation='mean')
+        #     self.add_metric(rmse_sample, name='RMSE(sample)', aggregation='mean')
 
         return tf.constant(0.0, dtype=tf.float32)
 
@@ -266,18 +273,17 @@ class FixedVarianceNormalVAE(VAE):
         # evidence lower bound
         elbo = ell - dkl_z
 
-        # log posterior predictive likelihood
-        lpp = self.posterior_predictive_log_prob(x, params=(mu,))
+        # pack parameters
+        params = (mu,)
 
-        return elbo, ell, dkl_z, None, lpp
+        return elbo, ell, dkl_z, None, params
 
-    @staticmethod
-    def ppc_kwargs():
-        return dict()
-
-    def posterior_predictive(self, mu, **kwargs):
-        px = tfp.distributions.Normal(loc=mu, scale=self.standard_deviation)
-        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
+    def posterior_predictive(self, mu):
+        components = []
+        for m in tf.unstack(mu):
+            p = tfp.distributions.Normal(loc=m, scale=self.standard_deviation)
+            components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
+        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
 
 
 class NormalVAE(VAE):
@@ -362,24 +368,22 @@ class NormalVAE(VAE):
         # evidence lower bound
         elbo = ell - dkl_z + ll_precision
 
-        # log posterior predictive likelihood
-        lpp = self.posterior_predictive_log_prob(x, params=(mu, sigma))
+        # pack parameters
+        params = (mu, sigma)
 
-        return elbo, ell, dkl_z, None, lpp
+        return elbo, ell, dkl_z, None, params
 
-    @staticmethod
-    def ppc_kwargs():
-        return dict()
-
-    @staticmethod
-    def posterior_predictive(mu, sigma, **kwargs):
-        px = tfp.distributions.Normal(loc=mu, scale=sigma)
-        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
+    def posterior_predictive(self, mu, sigma):
+        components = []
+        for m, s in zip(tf.unstack(mu), tf.unstack(sigma)):
+            p = tfp.distributions.Normal(loc=m, scale=s)
+            components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
+        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
 
 
 class StudentVAE(VAE):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, num_mc_samples=1):
+    def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, num_mc_samples):
         super(StudentVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
         assert min_dof >= 0
 
@@ -429,27 +433,28 @@ class StudentVAE(VAE):
         # evidence lower bound
         elbo = ell - dkl_z
 
-        # log posterior predictive likelihood
-        lpp = self.posterior_predictive_log_prob(x, params=(mu, nu, sigma))
+        # pack parameters
+        params = (mu, nu, sigma)
 
-        return elbo, ell, dkl_z, None, lpp
+        return elbo, ell, dkl_z, None, params
 
-    @staticmethod
-    def ppc_kwargs():
-        return dict()
-
-    def posterior_predictive(self, mu, nu, sigma, **kwargs):
-        px = tfp.distributions.StudentT(df=nu + self.min_dof, loc=mu, scale=sigma)
-        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
+    def posterior_predictive(self, mu, nu, sigma):
+        components = []
+        for m, n, s in zip(tf.unstack(mu), tf.unstack(nu), tf.unstack(sigma)):
+            p = tfp.distributions.StudentT(df=n + self.min_dof, loc=m, scale=s)
+            components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
+        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
 
 
 class VariationalVarianceVAE(VAE):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, prior_type, num_mc_samples=1, **kwargs):
+    def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, prior_type, num_mc_samples, **kwargs):
         super(VariationalVarianceVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
+        assert min_dof >= 0
         assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
 
         # save configuration
+        self.min_dof = min_dof
         self.prior_type = prior_type
 
         # configure prior
@@ -497,7 +502,7 @@ class VariationalVarianceVAE(VAE):
         # vectorized network calls
         z_samples = tf.reshape(z_samples, [-1, self.dim_z])
         mu = tf.reshape(self.mu(z_samples), param_shape)
-        alpha = tf.reshape(self.alpha(z_samples), param_shape)
+        alpha = tf.reshape(self.alpha(z_samples), param_shape) + self.min_dof / 2
         beta = tf.reshape(self.beta(z_samples), param_shape)
 
         return mu, alpha, beta
@@ -574,23 +579,17 @@ class VariationalVarianceVAE(VAE):
         # evidence lower bound
         elbo = ell - dkl_z - dkl_p
 
-        # log posterior predictive likelihood
-        lpp = self.posterior_predictive_log_prob(x, params=(mu, alpha, beta), **{'analytic_integration': True})
+        # pack parameters
+        params = (mu, alpha, beta)
 
-        return elbo, ell, dkl_z, dkl_p, lpp
+        return elbo, ell, dkl_z, dkl_p, params
 
-    @staticmethod
-    def ppc_kwargs():
-        return {'analytic_integration': False}
-
-    def posterior_predictive(self, mu, alpha, beta, **kwargs):
-        assert isinstance(kwargs.get('analytic_integration'), bool)
-        if kwargs.get('analytic_integration'):
-            px = tfp.distributions.StudentT(df=2 * alpha, loc=mu, scale=tf.sqrt(beta / alpha))
-        else:
-            p_samples = self.gamma(alpha, beta).sample()
-            px = tfp.distributions.Normal(loc=mu, scale=p_samples ** -0.5)
-        return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
+    def posterior_predictive(self, mu, alpha, beta):
+        components = []
+        for m, a, b in zip(tf.unstack(mu), tf.unstack(alpha), tf.unstack(beta)):
+            p = tfp.distributions.StudentT(df=2 * a, loc=m, scale=tf.sqrt(b / a))
+            components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
+        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
 
 
 if __name__ == '__main__':
@@ -637,7 +636,7 @@ if __name__ == '__main__':
 
     # Variational Variance VAE (ours) + standard prior
     vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-                                 num_mc_samples=NUM_MC_SAMPLES, prior_type='Standard', a=1., b=1e-3)
+                                 num_mc_samples=NUM_MC_SAMPLES, min_dof=0, prior_type='Standard', a=2., b=1e-2)
 
     # # Variational Variance VAE (ours) + VBEM prior
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
