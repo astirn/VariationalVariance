@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import gamma
 
 from generative_data import load_data_set
-from utils_model import softplus_inverse, expected_log_normal
+from utils_model import expected_log_normal, VariationalVariance
 from callbacks import LearningCurveCallback, ReconstructionCallback, LatentVisualizationCallback2D
 
 # workaround: https://github.com/tensorflow/tensorflow/issues/34888
@@ -215,7 +215,7 @@ class VAE(tf.keras.Model):
 
         # log posterior predictive heuristics
         self.add_metric(self.posterior_predictive(*params).log_prob(x), name='LPPL', aggregation='mean')
-        # if not kwargs.get('training'):
+        # if not kwargs.get('training'): TODO: move this to experiments
         #     x_mean, _, x_new = self.posterior_predictive_moments_and_samples(params)
         #     rmse_mean = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_mean)), axis=-1))
         #     rmse_sample = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_new)), axis=-1))
@@ -446,41 +446,42 @@ class StudentVAE(VAE):
         return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
 
 
-class VariationalVarianceVAE(VAE):
+class VariationalVarianceVAE(VAE, VariationalVariance):
 
     def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, prior_type, num_mc_samples, **kwargs):
-        super(VariationalVarianceVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
+        VAE.__init__(self, dim_x, dim_z, architecture, batch_norm, num_mc_samples)
+        VariationalVariance.__init__(self, int(np.prod(dim_x)), prior_type, prior_fam='Gamma', **kwargs) # TODO: add LogNormal to VAE
         assert min_dof >= 0
         assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
 
         # save configuration
         self.min_dof = min_dof
-        self.prior_type = prior_type
-
-        # configure prior
-        if self.prior_type == 'Standard':
-            a = tf.constant([kwargs.get('a')] * np.prod(dim_x), dtype=tf.float32)
-            b = tf.constant([kwargs.get('b')] * np.prod(dim_x), dtype=tf.float32)
-            self.pp = self.gamma(a, b)
-        elif 'VAMP' in self.prior_type:
-            # pseudo-inputs
-            trainable = '*' in self.prior_type
-            self.u = tf.Variable(initial_value=kwargs.get('u'), dtype=tf.float32, trainable=trainable, name='u')
-        elif self.prior_type == 'VBEM':
-            # fixed prior parameters for precision
-            params = [0.05, 0.1, 0.25, 0.5, 0.75, 1., 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-            uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
-            u = tf.expand_dims(uv[0], axis=-1)
-            v = tf.expand_dims(uv[1], axis=-1)
-            self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=False, name='u')
-            self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=False, name='v')
-        elif self.prior_type == 'VBEM*':
-            # trainable prior parameters for precision
-            k = kwargs.get('k')
-            u = tf.random.uniform(shape=(k, np.prod(dim_x)), minval=-3, maxval=3, dtype=tf.float32)
-            v = tf.random.uniform(shape=(k, np.prod(dim_x)), minval=-3, maxval=3, dtype=tf.float32)
-            self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=True, name='u')
-            self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=True, name='v')
+        # self.prior_type = prior_type
+        #
+        # # configure prior
+        # if self.prior_type == 'Standard':
+        #     a = tf.constant([kwargs.get('a')] * np.prod(dim_x), dtype=tf.float32)
+        #     b = tf.constant([kwargs.get('b')] * np.prod(dim_x), dtype=tf.float32)
+        #     self.pp = self.gamma(a, b)
+        # elif 'VAMP' in self.prior_type:
+        #     # pseudo-inputs
+        #     trainable = '*' in self.prior_type
+        #     self.u = tf.Variable(initial_value=kwargs.get('u'), dtype=tf.float32, trainable=trainable, name='u')
+        # elif self.prior_type == 'VBEM':
+        #     # fixed prior parameters for precision
+        #     params = [0.05, 0.1, 0.25, 0.5, 0.75, 1., 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
+        #     uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
+        #     u = tf.expand_dims(uv[0], axis=-1)
+        #     v = tf.expand_dims(uv[1], axis=-1)
+        #     self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=False, name='u')
+        #     self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=False, name='v')
+        # elif self.prior_type == 'VBEM*':
+        #     # trainable prior parameters for precision
+        #     k = kwargs.get('k')
+        #     u = tf.random.uniform(shape=(k, np.prod(dim_x)), minval=-3, maxval=3, dtype=tf.float32)
+        #     v = tf.random.uniform(shape=(k, np.prod(dim_x)), minval=-3, maxval=3, dtype=tf.float32)
+        #     self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=True, name='u')
+        #     self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=True, name='v')
 
         # select network architectures accordingly
         decoder = decoder_dense if architecture == 'dense' else decoder_convolution
@@ -488,11 +489,11 @@ class VariationalVarianceVAE(VAE):
 
         # build parameter networks
         self.mu = decoder(dim_z, dim_out, batch_norm, final_activation=None, name='mu_x')
-        self.alpha = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='alpha_x')
+        self.alpha_network = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='alpha_x')
+        self.alpha = lambda x: self.alpha_network(x) + self.min_dof / 2
         self.beta = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='beta_x')
         if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
             self.pi = mixture_network(dim_z, self.u.shape[0], batch_norm, name='pi')
-            self.pc = tfp.distributions.Categorical(logits=[1] * self.u.shape[0])
 
     def z_dependent_parameters(self, z_samples):
 
@@ -502,57 +503,53 @@ class VariationalVarianceVAE(VAE):
         # vectorized network calls
         z_samples = tf.reshape(z_samples, [-1, self.dim_z])
         mu = tf.reshape(self.mu(z_samples), param_shape)
-        alpha = tf.reshape(self.alpha(z_samples), param_shape) + self.min_dof / 2
+        alpha = tf.reshape(self.alpha(z_samples), param_shape)
         beta = tf.reshape(self.beta(z_samples), param_shape)
 
         return mu, alpha, beta
 
-    @staticmethod
-    def gamma(alpha, beta):
-        prior = tfp.distributions.Gamma(alpha, beta)
-        return tfp.distributions.Independent(prior, reinterpreted_batch_ndims=1)
-
-    @staticmethod
-    def qp(alpha, beta):
-        return tfp.distributions.Independent(tfp.distributions.Gamma(alpha, beta))
-
-    def dkl_precision(self, z_samples, p_samples, alpha, beta, vamp_samples=None):
-
-        # variational family q(precision|z)
-        qp = tfp.distributions.Independent(tfp.distributions.Gamma(alpha, beta))
-
-        # compute kl-divergence depending on prior type
-        if self.prior_type == 'Standard':
-            dkl = qp.kl_divergence(self.pp)
-        elif 'VAMP' in self.prior_type or 'VBEM' in self.prior_type:
-
-            # compute prior's mixture proportions
-            if self.prior_type in {'VAMP', 'VAMP*'}:
-                pi = self.pi(z_samples)
-            else:
-                pi = tf.ones(self.u.shape[0]) / self.u.shape[0]
-
-            # compute prior's mixture components
-            if 'VAMP' in self.prior_type:
-                alpha = self.alpha(self.qz(self.u).sample())
-                beta = self.beta(self.qz(self.u).sample())
-            else:
-                alpha = tf.nn.softplus(self.u)
-                beta = tf.nn.softplus(self.v)
-            pp_c = self.gamma(alpha + EPSILON, beta + EPSILON)
-
-            # MC estimate kl-divergence due to pesky log-sum
-            p_samples = tf.clip_by_value(p_samples, clip_value_min=EPSILON, clip_value_max=tf.float32.max)
-            p_samples = tf.tile(tf.expand_dims(p_samples, axis=-2), [1, 1] + pp_c.batch_shape.as_list() + [1])
-            log_pi = tf.math.log(tf.expand_dims(pi, axis=0))
-            log_pp_c = tf.clip_by_value(pp_c.log_prob(p_samples), clip_value_min=tf.float32.min, clip_value_max=100)
-            log_pp = tf.reduce_logsumexp(log_pi + log_pp_c, axis=-1)
-            dkl = -qp.entropy() - tf.reduce_mean(log_pp, axis=0)
-
-        else:
-            dkl = tf.constant(0.0, dtype=tf.float32)
-
-        return dkl
+    # @staticmethod
+    # def gamma(alpha, beta):
+    #     prior = tfp.distributions.Gamma(alpha, beta)
+    #     return tfp.distributions.Independent(prior, reinterpreted_batch_ndims=1)
+    #
+    # def dkl_precision(self, z_samples, p_samples, alpha, beta, vamp_samples=None):
+    #
+    #     # variational family q(precision|z)
+    #     qp = tfp.distributions.Independent(tfp.distributions.Gamma(alpha, beta))
+    #
+    #     # compute kl-divergence depending on prior type
+    #     if self.prior_type == 'Standard':
+    #         dkl = qp.kl_divergence(self.pp)
+    #     elif 'VAMP' in self.prior_type or 'VBEM' in self.prior_type:
+    #
+    #         # compute prior's mixture proportions
+    #         if self.prior_type in {'VAMP', 'VAMP*'}:
+    #             pi = self.pi(z_samples)
+    #         else:
+    #             pi = tf.ones(self.u.shape[0]) / self.u.shape[0]
+    #
+    #         # compute prior's mixture components
+    #         if 'VAMP' in self.prior_type:
+    #             alpha = self.alpha(self.qz(self.u).sample())
+    #             beta = self.beta(self.qz(self.u).sample())
+    #         else:
+    #             alpha = tf.nn.softplus(self.u)
+    #             beta = tf.nn.softplus(self.v)
+    #         pp_c = self.gamma(alpha + EPSILON, beta + EPSILON)
+    #
+    #         # MC estimate kl-divergence due to pesky log-sum
+    #         p_samples = tf.clip_by_value(p_samples, clip_value_min=EPSILON, clip_value_max=tf.float32.max)
+    #         p_samples = tf.tile(tf.expand_dims(p_samples, axis=-2), [1, 1] + pp_c.batch_shape.as_list() + [1])
+    #         log_pi = tf.math.log(tf.expand_dims(pi, axis=0))
+    #         log_pp_c = tf.clip_by_value(pp_c.log_prob(p_samples), clip_value_min=tf.float32.min, clip_value_max=100)
+    #         log_pp = tf.reduce_logsumexp(log_pi + log_pp_c, axis=-1)
+    #         dkl = -qp.entropy() - tf.reduce_mean(log_pp, axis=0)
+    #
+    #     else:
+    #         dkl = tf.constant(0.0, dtype=tf.float32)
+    #
+    #     return dkl
 
     def variational_objective(self, x, qz_x):
 
@@ -568,13 +565,10 @@ class VariationalVarianceVAE(VAE):
         # compute KL divergence w.r.t. p(z)
         dkl_z = qz_x.kl_divergence(self.pz)
 
-        # sample p's variational posterior for monte-carlo estimates
-        p_samples = self.gamma(alpha, beta).sample()
-
-        # monte-carlo estimate KL divergence w.r.t. p(lambda)
-        # dkl_p = tf.vectorized_map(lambda elements: self.dkl_precision(*elements), (z_samples, p_samples, alpha, beta))
-        # dkl_p = tf.reduce_mean(dkl_p, axis=0)
-        dkl_p = tf.reduce_mean(self.gamma(alpha, beta).kl_divergence(self.pp), axis=0)
+        # compute KL divergence w.r.t. p(lambda)
+        qp, p_samples = self.variational_precision(alpha, beta, leading_mc_dimension=True)
+        vamp_samples = self.qz(self.u).sample(sample_shape=self.num_mc_samples) if 'VAMP' in self.prior_type else None
+        dkl_p = self.dkl_precision(qp, p_samples, pi_parent_samples=z_samples, vamp_samples=vamp_samples)
 
         # evidence lower bound
         elbo = ell - dkl_z - dkl_p
@@ -629,22 +623,35 @@ if __name__ == '__main__':
 
     # # Student-T VAE (Takahashi, 2018)
     # vae = StudentVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                  num_mc_samples=NUM_MC_SAMPLES, min_dof=3)
+    #                  num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF)
 
-    # Empirical-Bayes MAP VAE (ours) # TODO: is this worth trying again?
-    # vae = NormalVAE(dim_x=DIM_X, architecture=ARCH, batch_norm=BATCH_NORM, split_decoder=True, a=A, b=B)
+    # # Variational Variance VAE (ours) + standard prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='Standard', a=2., b=1e-2)
 
-    # Variational Variance VAE (ours) + standard prior
-    vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-                                 num_mc_samples=NUM_MC_SAMPLES, min_dof=0, prior_type='Standard', a=2., b=1e-2)
+    # # Variational Variance VAE (ours) + VAMP prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VAMP', u=U)
+
+    # # Variational Variance VAE (ours) + VAMP* prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VAMP*', u=U)
+
+    # # Variational Variance VAE (ours) + xVAMP prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='xVAMP', u=U)
+
+    # # Variational Variance VAE (ours) + xVAMP* prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='xVAMP*', u=U)
 
     # # Variational Variance VAE (ours) + VBEM prior
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                              prior_type='VBEM', k=10)
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM')
 
-    # Variational Variance VAE (ours) + VAMP prior
-    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                              prior='vamp', a=1., b=1e-3, u=U)
+    # Variational Variance VAE (ours) + VBEM* prior
+    vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+                                 num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=100)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
     vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4), loss=[None], run_eagerly=False)
