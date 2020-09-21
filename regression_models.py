@@ -9,7 +9,7 @@ import tensorflow_probability as tfp
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from utils_model import softplus_inverse, mixture_proportions, VariationalVariance
+from utils_model import softplus_inverse, expected_log_normal, mixture_proportions, VariationalVariance
 from callbacks import RegressionCallback
 from regression_data import generate_toy_data
 
@@ -84,21 +84,21 @@ class NormalRegression(LocationScaleRegression):
         precision = self.precision(x)
 
         # compute log likelihood on whitened targets
-        ll_whitened = self.ll(y, mean, precision, whiten_targets=True)
+        ll = self.ll(y, mean, precision, whiten_targets=True)
 
         # use negative log likelihood on whitened targets as minimization objective
-        self.add_loss(-tf.reduce_mean(ll_whitened))
+        self.add_loss(-tf.reduce_mean(ll))
 
         # compute de-whitened performance
-        ll = self.ll(y, mean, precision, whiten_targets=False)
+        ll_de_whitened = self.ll(y, mean, precision, whiten_targets=False)
         rmse = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mean)), axis=-1))
 
         # assign model's log likelihood (Bayesian methods will use log posterior predictive likelihood)
-        ll_model = ll
+        ll_model = ll_de_whitened
 
-        # additional observation metrics
-        self.add_metric(ll_whitened, name='LL (whitened)', aggregation='mean')
+        # observation metrics
         self.add_metric(ll, name='LL', aggregation='mean')
+        self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
         self.add_metric(rmse, name='RMSE', aggregation='mean')
 
@@ -132,27 +132,6 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
             self.pi = neural_network(d_in, d_hidden, f_hidden, self.u.shape[0], f_out='softmax', name='pi')
 
-    def expected_log_lambda(self, alpha, beta):
-        if self.prior_fam == 'Gamma':
-            return tf.math.digamma(alpha) - tf.math.log(beta)
-        elif self.prior_fam == 'LogNormal':
-            return alpha
-
-    @ staticmethod
-    def ll(y, mu, expected_lambda, expected_log_lambda):
-        ll = 0.5 * (expected_log_lambda - tf.math.log(2 * np.pi) - (y - mu) ** 2 * expected_lambda)
-        return tf.reduce_sum(ll, axis=-1)
-
-    def whiten(self, y, mu, expected_lambda, expected_log_lambda):
-        y = (y - self.y_mean) / self.y_std
-        return y, mu, expected_lambda, expected_log_lambda
-
-    def de_whiten(self, y, mu, expected_lambda, expected_log_lambda):
-        mu = mu * self.y_std + self.y_mean
-        expected_lambda = expected_lambda / self.y_var
-        expected_log_lambda = expected_log_lambda - tf.math.log(self.y_var)
-        return y, mu, expected_lambda, expected_log_lambda
-
     def objective(self, x, y):
 
         # run parameter networks
@@ -163,15 +142,16 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         # variational family
         qp, p_samples = self.variational_precision(alpha, beta, leading_mc_dimension=False)
 
-        # variational variance log likelihood E_{q(lambda|alpha(x), beta(x))}[log p(y|mu(x), lambda)]
-        expected_log_lambda = self.expected_log_lambda(alpha, beta)
-        ell = self.ll(*self.whiten(y, mu, qp.mean(), expected_log_lambda))
+        # expected log likelihood on whitened targets
+        expected_precision = self.expected_precision(alpha, beta)
+        expected_log_precision = self.expected_log_precision(alpha, beta)
+        ell = expected_log_normal(self.whiten_targets(y), mu, expected_precision, expected_log_precision)
 
         # compute KL divergence w.r.t. p(lambda)
         vamp_samples = tf.expand_dims(self.u, axis=0) if 'VAMP' in self.prior_type else None
         dkl = self.dkl_precision(qp, p_samples, pi_parent_samples=tf.expand_dims(x, axis=0), vamp_samples=vamp_samples)
 
-        # evidence lower bound
+        # use negative evidence lower bound as minimization objective
         elbo = ell - dkl
 
         # compute adjusted log likelihood of non-scaled y using de-whitened model parameter
@@ -192,11 +172,24 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         # add minimization objective
         self.add_loss(-tf.reduce_mean(elbo))
 
-        # add log posterior predictive likelihood
-        py_x = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=False)
-        self.add_metric(py_x.log_prob(y), name='LPPL', aggregation='mean')
-        py_x = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=True)
-        self.add_metric(py_x.log_prob(y), name='LPPL (adjusted)', aggregation='mean')
+        # compute de-whitened performance
+        expected_precision = self.de_whiten_precision(expected_precision)
+        expected_log_precision = self.de_whiten_log_precision(expected_log_precision)
+        ell_de_whitened = expected_log_normal(y, mu, expected_precision, expected_log_precision)
+        rmse = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mu)), axis=-1))
+
+        # assign model's log likelihood as the log posterior predictive likelihood
+        ll_model = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=True).log_prob(y)
+        ll_model_whiten = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=False).log_prob(y)
+
+        # observation metrics
+        self.add_metric(elbo, name='ELBO', aggregation='mean')
+        self.add_metric(ell, name='ELL', aggregation='mean')
+        self.add_metric(dkl, name='KL', aggregation='mean')
+        self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
+        self.add_metric(ll_model, name='Model LL', aggregation='mean')
+        self.add_metric(ll_model_whiten, name='Model LL (whitened)', aggregation='mean')
+        self.add_metric(rmse, name='RMSE', aggregation='mean')
 
     def posterior_predictive(self, mu, alpha, beta, p_samples, de_whiten=False):
         shift = self.y_mean if de_whiten else 0.0

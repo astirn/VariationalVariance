@@ -13,17 +13,15 @@ def softplus_inverse(x):
     return tf.math.log(tf.exp(x) - 1)
 
 
-def expected_log_normal(x, mu, alpha, beta):
+def expected_log_normal(x, mu, precision, log_precision):
     """
-    :param x: observations with leading batch dimension and where remaining dimensions constitute event shape
-    :param mu: mean parameter with leading MC sample dimension followed by batch dimension
-    :param alpha: precision shape parameter with leading MC sample dimension followed by batch dimension
-    :param beta: precision scale parameter with leading MC sample dimension followed by batch dimension
+    :param x: observations where trailing dimension constitutes an event with diagonal covariance
+    :param mu: mean parameter
+    :param precision: precision parameter
+    :param log_precision: log precision parameter
     :return: E_{q(lambda | alpha, beta} [log Normal(x | mu, lambda)]
     """
-    expected_lambda = alpha / beta
-    expected_log_lambda = tf.math.digamma(alpha) - tf.math.log(beta)
-    ll = 0.5 * (expected_log_lambda - tf.math.log(2 * np.pi) - (x - mu) ** 2 * expected_lambda)
+    ll = 0.5 * (log_precision - tf.math.log(2 * np.pi) - (x - mu) ** 2 * precision)
     return tf.reduce_sum(ll, axis=-1)
 
 
@@ -94,6 +92,28 @@ class VariationalVariance(object):
             v = tf.random.uniform(shape=(k, dim_precision), minval=-3, maxval=3, dtype=tf.float32)
             self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=True, name='u')
             self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=True, name='v')
+
+    def expected_precision(self, alpha, beta):
+        """
+        :param alpha: precision shape (Gamma distributed precision) or mean (LogNormal distributed precision) parameter
+        :param beta: precision scale parameter with leading MC sample dimension followed by batch dimension
+        :return: E_{q(lambda | alpha, beta} [lambda]
+        """
+        if self.prior_fam == 'Gamma':
+            return alpha / beta
+        else:  # self.prior_fam == 'LogNormal':
+            return tf.exp(alpha + beta ** 2 / 2)
+
+    def expected_log_precision(self, alpha, beta):
+        """
+        :param alpha: precision shape (Gamma distributed precision) or mean (LogNormal distributed precision) parameter
+        :param beta: precision scale parameter with leading MC sample dimension followed by batch dimension
+        :return: E_{q(lambda | alpha, beta} [log lambda]
+        """
+        if self.prior_fam == 'Gamma':
+            return tf.math.digamma(alpha) - tf.math.log(beta)
+        else:  # self.prior_fam == 'LogNormal':
+            return alpha
 
     def precision_prior(self, alpha, beta):
         if self.prior_fam == 'Gamma':

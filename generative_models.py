@@ -487,7 +487,9 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
         mu, alpha, beta = self.z_dependent_parameters(z_samples)
 
         # monte-carlo estimate expected log likelihood
-        ell = tf.reduce_mean(expected_log_normal(x, mu, alpha, beta), axis=0)
+        expected_precision = self.expected_precision(alpha, beta)
+        expected_log_precision = self.expected_log_precision(alpha, beta)
+        ell = tf.reduce_mean(expected_log_normal(x, mu, expected_precision, expected_log_precision), axis=0)
 
         # compute KL divergence w.r.t. p(z)
         dkl_z = qz_x.kl_divergence(self.pz)
