@@ -1,6 +1,4 @@
-import os
 import argparse
-import itertools
 import numpy as np
 import tensorflow as tf
 import scipy.stats as sps
@@ -208,9 +206,10 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
     def model_stddev(self, x):
         """Model standard dev. is the expected value under precision's variational posterior"""
         if self.prior_fam == 'Gamma':
-            alpha = self.alpha(x)
-            beta = self.beta(x)
-            return tf.exp(tf.math.lgamma(alpha - 0.5)) / tf.exp(tf.math.lgamma(alpha)) * tf.sqrt(beta) * self.y_std
+            # Monte-Carlo estimate since analytic solution is only valid for alpha > 0.5
+            # analytic expected standard deviation = Gamma(alpha - 0.5) / Gamma(alpha) / sqrt(beta)
+            _, p_samples = self.variational_precision(self.alpha(x), self.beta(x), leading_mc_dimension=False)
+            return tf.reduce_mean(p_samples ** -0.5, axis=0)
         elif self.prior_fam == 'LogNormal':
             return tf.exp(self.beta(x) ** 2 / 8 - self.alpha(x) / 2)
 
@@ -333,8 +332,11 @@ if __name__ == '__main__':
     # train model
     hist = mdl.fit(ds_train, epochs=EPOCHS, verbose=0, callbacks=[RegressionCallback(EPOCHS)])
 
-    # plot results for toy data
+    # evaluate model with increased Monte-Carlo samples
+    mdl.num_mc_samples = 2000
     mdl_mean, mdl_std = mdl.model_mean(x_eval), mdl.model_stddev(x_eval)
+
+    # plot results for toy data
     fig = plt.figure()
     fig.suptitle(args.algorithm)
     plt.plot(hist.history['Model LL'])
