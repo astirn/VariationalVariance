@@ -111,57 +111,18 @@ class NormalRegression(LocationScaleRegression):
         return self.de_whiten_stddev(self.precision(x) ** -0.5)
 
 
-class VariationalPrecisionNormalRegression(tf.keras.Model, VariationalVariance):
+class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalVariance):
 
-    def __init__(self, d_in, d_hidden, f_hidden, d_out, prior_type, prior_fam, y_mean, y_var, n_mc=1, **kwargs):
-        tf.keras.Model.__init__(self)
+    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, prior_type, prior_fam, num_mc_samples, **kwargs):
+        LocationScaleRegression.__init__(self, y_mean, y_var)
         VariationalVariance.__init__(self, d_out, prior_type, prior_fam, **kwargs)
         assert isinstance(d_in, int) and d_in > 0
         assert isinstance(d_hidden, int) and d_hidden > 0
         assert isinstance(d_out, int) and d_out > 0
-        # assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
-        # assert prior_fam in {'Gamma', 'LogNormal'}
-        assert isinstance(n_mc, int) and n_mc > 0
+        assert isinstance(num_mc_samples, int) and num_mc_samples > 0
 
         # save configuration
-        # self.prior_type = prior_type
-        # self.prior_fam = prior_fam
-        self.y_mean = tf.constant(y_mean, dtype=tf.float32)
-        self.y_var = tf.constant(y_var, dtype=tf.float32)
-        self.y_std = tf.sqrt(self.y_var)
-        self.num_mc_samples = n_mc
-
-        # # configure prior
-        # if self.prior_type == 'Standard':
-        #     a = tf.constant([kwargs.get('a')] * d_out, dtype=tf.float32)
-        #     b = tf.constant([kwargs.get('b')] * d_out, dtype=tf.float32)
-        #     self.pp = self.precision_prior(a, b)
-        # elif 'VAMP' in self.prior_type:
-        #     # pseudo-inputs
-        #     trainable = '*' in self.prior_type
-        #     self.u = tf.Variable(initial_value=kwargs.get('u'), dtype=tf.float32, trainable=trainable, name='u')
-        # elif self.prior_type == 'VBEM':
-        #     # fixed prior parameters for precision
-        #     params = [0.05, 0.1, 0.25, 0.5, 0.75, 1., 1.5, 2.0, 2.5, 3.0, 3.5, 4.0]
-        #     if self.prior_fam == 'Gamma':
-        #         uv = softplus_inverse(np.array(tuple(itertools.product(params, params)), dtype=np.float32).T)
-        #         u = tf.expand_dims(uv[0], axis=-1)
-        #         v = tf.expand_dims(uv[1], axis=-1)
-        #     else:
-        #         uv = np.array(tuple(itertools.product(params, params)), dtype=np.float32).T
-        #         mean = uv[0] / uv[1]
-        #         var = uv[0] / uv[1] ** 2
-        #         u = tf.expand_dims(tf.math.log(mean ** 2 / (mean ** 2 + var) ** 0.5), axis=-1)
-        #         v = softplus_inverse(tf.expand_dims(tf.math.log(1 + var / (mean ** 2)), axis=-1))
-        #     self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=False, name='u')
-        #     self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=False, name='v')
-        # elif self.prior_type == 'VBEM*':
-        #     # trainable prior parameters for precision
-        #     k = kwargs.get('k')
-        #     u = tf.random.uniform(shape=(k, d_out), minval=-3, maxval=3, dtype=tf.float32)
-        #     v = tf.random.uniform(shape=(k, d_out), minval=-3, maxval=3, dtype=tf.float32)
-        #     self.u = tf.Variable(initial_value=u, dtype=tf.float32, trainable=True, name='u')
-        #     self.v = tf.Variable(initial_value=v, dtype=tf.float32, trainable=True, name='v')
+        self.num_mc_samples = num_mc_samples
 
         # build parameter networks
         self.mu = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
@@ -170,54 +131,6 @@ class VariationalPrecisionNormalRegression(tf.keras.Model, VariationalVariance):
         self.beta = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='beta')
         if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
             self.pi = neural_network(d_in, d_hidden, f_hidden, self.u.shape[0], f_out='softmax', name='pi')
-
-    # def precision_prior(self, alpha, beta):
-    #     if self.prior_fam == 'Gamma':
-    #         prior = tfp.distributions.Gamma(alpha, beta)
-    #     elif self.prior_fam == 'LogNormal':
-    #         prior = tfp.distributions.LogNormal(alpha, beta)
-    #     return tfp.distributions.Independent(prior, reinterpreted_batch_ndims=1)
-    #
-    # def qp(self, x):
-    #     if self.prior_fam == 'Gamma':
-    #         qp = tfp.distributions.Gamma(self.alpha(x), self.beta(x))
-    #     elif self.prior_fam == 'LogNormal':
-    #         qp = tfp.distributions.LogNormal(self.alpha(x), self.beta(x))
-    #     return tfp.distributions.Independent(qp)
-    #
-    # def variational_family(self, x):
-    #     # variational family q(precision|x)
-    #     qp = self.qp(x)
-    #
-    #     # compute kl-divergence depending on prior type
-    #     if self.prior_type == 'Standard':
-    #         dkl = qp.kl_divergence(self.pp)
-    #     elif 'VAMP' in self.prior_type or 'VBEM' in self.prior_type:
-    #
-    #         # compute prior's mixture proportions
-    #         pi = tf.ones(self.u.shape[0]) / self.u.shape[0] if self.prior_type in {'VAMP', 'VAMP*'} else self.pi(x)
-    #
-    #         # compute prior's mixture components
-    #         if 'VAMP' in self.prior_type:
-    #             alpha = self.alpha(self.u)
-    #             beta = self.beta(self.u)
-    #         else:
-    #             alpha = tf.nn.softplus(self.u) if self.prior_fam == 'Gamma' else self.u
-    #             beta = tf.nn.softplus(self.v)
-    #         pp_c = self.precision_prior(alpha, beta)
-    #
-    #         # MC estimate kl-divergence due to pesky log-sum
-    #         p_samples = qp.sample(self.num_mc_samples)
-    #         p_samples = tf.tile(tf.expand_dims(p_samples, axis=-2), [1, 1] + pp_c.batch_shape.as_list() + [1])
-    #         log_pi = tf.math.log(tf.expand_dims(pi, axis=0))
-    #         log_pp_c = tf.clip_by_value(pp_c.log_prob(p_samples), clip_value_min=tf.float32.min, clip_value_max=100)
-    #         log_pp = tf.reduce_logsumexp(log_pi + log_pp_c, axis=-1)
-    #         dkl = -qp.entropy() - tf.reduce_mean(log_pp, axis=0)
-    #
-    #     else:
-    #         dkl = tf.constant(0.0)
-    #
-    #     return qp, dkl
 
     def expected_log_lambda(self, alpha, beta):
         if self.prior_fam == 'Gamma':
@@ -240,7 +153,7 @@ class VariationalPrecisionNormalRegression(tf.keras.Model, VariationalVariance):
         expected_log_lambda = expected_log_lambda - tf.math.log(self.y_var)
         return y, mu, expected_lambda, expected_log_lambda
 
-    def variational_objective(self, x, y):
+    def objective(self, x, y):
 
         # run parameter networks
         mu = self.mu(x)
@@ -299,20 +212,18 @@ class VariationalPrecisionNormalRegression(tf.keras.Model, VariationalVariance):
             py_x = tfp.distributions.Mixture(cat=mixture_proportions(p_samples), components=components)
             return py_x
 
-    def posterior_mean(self, x):
+    def model_mean(self, x):
+        """Model mean is simply the mean network's output as it is not latent during variational inference"""
         return self.mu(x) * self.y_std + self.y_mean
 
-    def posterior_stddev(self, x):
+    def model_stddev(self, x):
+        """Model standard dev. is the expected value under precision's variational posterior"""
         if self.prior_fam == 'Gamma':
             alpha = self.alpha(x)
             beta = self.beta(x)
             return tf.exp(tf.math.lgamma(alpha - 0.5)) / tf.exp(tf.math.lgamma(alpha)) * tf.sqrt(beta) * self.y_std
         elif self.prior_fam == 'LogNormal':
             return tf.exp(self.beta(x) ** 2 / 8 - self.alpha(x) / 2)
-
-    def call(self, inputs, **kwargs):
-        self.variational_objective(x=inputs['x'], y=inputs['y'])
-        return tf.constant(0.0, dtype=tf.float32)
 
 
 def prior_params(precisions, prior_fam):
@@ -418,11 +329,13 @@ if __name__ == '__main__':
                 d_out=y_train.shape[1],
                 y_mean=0.0,
                 y_var=1.0,
+                prior_type=PRIOR_TYPE,
+                prior_fam=PRIOR_FAM,
+                num_mc_samples=N_MC_SAMPLES,
                 a=A,
                 b=B,
                 k=20,
-                u=U,
-                n_mc=N_MC_SAMPLES)
+                u=U)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
     optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, clipvalue=CLIP_VALUE)
