@@ -52,6 +52,9 @@ class LocationScaleRegression(tf.keras.Model):
     def de_whiten_log_precision(self, log_precision):
         return log_precision - tf.math.log(self.y_var)
 
+    def root_mean_squared_error(self, mean, y):
+        return tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mean)), axis=-1))
+
     def call(self, inputs, **kwargs):
         self.objective(x=inputs['x'], y=inputs['y'])
         return tf.constant(0.0, dtype=tf.float32)
@@ -89,18 +92,17 @@ class NormalRegression(LocationScaleRegression):
         # use negative log likelihood on whitened targets as minimization objective
         self.add_loss(-tf.reduce_mean(ll))
 
-        # compute de-whitened performance
+        # compute de-whitened log likelihood
         ll_de_whitened = self.ll(y, mean, precision, whiten_targets=False)
-        rmse = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mean)), axis=-1))
 
-        # assign model's log likelihood (Bayesian methods will use log posterior predictive likelihood)
+        # assign model's log likelihood (Bayesian methods will use log posterior predictive likelihood instead)
         ll_model = ll_de_whitened
 
         # observation metrics
         self.add_metric(ll, name='LL', aggregation='mean')
         self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(rmse, name='RMSE', aggregation='mean')
+        self.add_metric(self.root_mean_squared_error(mean, y), name='RMSE', aggregation='mean')
 
     def model_mean(self, x):
         """Model mean is simply the mean network's output trained using maximum likelihood"""
@@ -132,6 +134,22 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
             self.pi = neural_network(d_in, d_hidden, f_hidden, self.u.shape[0], f_out='softmax', name='pi')
 
+    def expected_ll(self, y, mu, alpha, beta, whiten_targets):
+
+        # compute expected precision and log precision under the variational posterior
+        expected_precision = self.expected_precision(alpha, beta)
+        expected_log_precision = self.expected_log_precision(alpha, beta)
+
+        # whiten things accordingly
+        if whiten_targets:
+            y = self.whiten_targets(y)
+        else:
+            mu = self.de_whiten_mean(mu)
+            expected_precision = self.de_whiten_precision(expected_precision)
+            expected_log_precision = self.de_whiten_log_precision(expected_log_precision)
+
+        return expected_log_normal(y, mu, expected_precision, expected_log_precision)
+
     def objective(self, x, y):
 
         # run parameter networks
@@ -143,9 +161,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         qp, p_samples = self.variational_precision(alpha, beta, leading_mc_dimension=False)
 
         # expected log likelihood on whitened targets
-        expected_precision = self.expected_precision(alpha, beta)
-        expected_log_precision = self.expected_log_precision(alpha, beta)
-        ell = expected_log_normal(self.whiten_targets(y), mu, expected_precision, expected_log_precision)
+        ell = self.expected_ll(y, mu, alpha, beta, whiten_targets=True)
 
         # compute KL divergence w.r.t. p(lambda)
         vamp_samples = tf.expand_dims(self.u, axis=0) if 'VAMP' in self.prior_type else None
@@ -155,11 +171,8 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         elbo = ell - dkl
         self.add_loss(-tf.reduce_mean(elbo))
 
-        # compute de-whitened performance
-        expected_precision = self.de_whiten_precision(expected_precision)
-        expected_log_precision = self.de_whiten_log_precision(expected_log_precision)
-        ell_de_whitened = expected_log_normal(y, mu, expected_precision, expected_log_precision)
-        rmse = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mu)), axis=-1))
+        # compute de-whitened expected log likelihood
+        ell_de_whitened = self.expected_ll(y, mu, alpha, beta, whiten_targets=False)
 
         # assign model's log likelihood as the log posterior predictive likelihood
         ll_model = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=True).log_prob(y)
@@ -172,7 +185,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
         self.add_metric(ll_model_whiten, name='Model LL (whitened)', aggregation='mean')
-        self.add_metric(rmse, name='RMSE', aggregation='mean')
+        self.add_metric(self.root_mean_squared_error(mu, y), name='RMSE', aggregation='mean')
 
     def posterior_predictive(self, mu, alpha, beta, p_samples, de_whiten=False):
         shift = self.y_mean if de_whiten else 0.0
@@ -267,7 +280,7 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='Normal', help='algorithm')
+    parser.add_argument('--algorithm', type=str, default='Gamma-Normal', help='algorithm')
     parser.add_argument('--prior_type', default='xVAMP*', type=str, help='prior type')
     parser.add_argument('--seed', default=1234, type=int, help='prior type')
     args = parser.parse_args()
