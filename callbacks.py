@@ -24,15 +24,14 @@ class RegressionCallback(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs=None):
         if not self.parallel and epoch % 500 == 0:
-            prefix = 'val_' if sum(['val_' in key for key in logs.keys()]) else ''
-            print('Epoch {:d}/{:d},'.format(epoch, self.n_epochs),
-                  'Loss {:.4f},'.format(logs[prefix + 'loss']),
-                  'ELL {:.4f},'.format(logs[prefix + 'ELL']),
-                  'LPPL{:.4f},'.format(logs[prefix + 'LPPL']),
-                  'KL {:.4f}'.format(logs[prefix + 'KL']),
-                  'ELL Adjusted {:.4f},'.format(logs[prefix + 'ELL (adjusted)']),
-                  'LPPL Adjusted {:.4f},'.format(logs[prefix + 'LPPL (adjusted)']),
-                  'RMSE {:.4f}'.format(np.sqrt(logs[prefix + 'MSE'])))
+            validation_exists = sum(['val_' in key for key in logs.keys()]) > 0
+            update_str = 'Epoch {:d}/{:d}'.format(epoch, self.n_epochs)
+            for key, val in logs.items():
+                if not validation_exists:
+                    update_str += ', ' + key + ' {:.4f}'.format(val)
+                elif validation_exists and 'val_' in key:
+                    update_str += ', ' + key.split('val_')[1] + ' {:.4f}'.format(val)
+            print(update_str)
 
 
 class LearningCurveCallback(tf.keras.callbacks.Callback):

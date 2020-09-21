@@ -27,95 +27,91 @@ def neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name=None):
     return nn
 
 
-class NormalRegression(tf.keras.Model):
+class LocationScaleRegression(tf.keras.Model):
 
-    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, grad_mode=None, **kwargs):
-        super(NormalRegression, self).__init__()
-        assert isinstance(d_in, int) and d_in > 0
-        assert isinstance(d_hidden, int) and d_hidden > 0
-        assert isinstance(d_out, int) and d_out > 0
-        assert grad_mode is None or grad_mode in {'constant', 'normalized'}
+    def __init__(self, y_mean, y_var):
+        super(LocationScaleRegression, self).__init__()
 
         # save configuration
         self.y_mean = tf.constant(y_mean, dtype=tf.float32)
         self.y_var = tf.constant(y_var, dtype=tf.float32)
         self.y_std = tf.sqrt(self.y_var)
-        self.grad_mode = grad_mode
 
-        # build parameter networks
-        self.mean = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
-        self.precision = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='lambda')
+    def whiten_targets(self, y):
+        return (y - self.y_mean) / self.y_std
 
-    @ staticmethod
-    def ll(y, mean, precision):
-        return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=precision ** -0.5).log_prob(y)
+    def de_whiten_mean(self, mu):
+        return mu * self.y_std + self.y_mean
 
-    def whiten(self, y, mean, precision):
-        y = (y - self.y_mean) / self.y_std
-        return y, mean, precision
+    def de_whiten_stddev(self, sigma):
+        return sigma * self.y_std
 
-    def de_whiten(self, y, mean, precision):
-        mean = mean * self.y_std + self.y_mean
-        precision = precision / self.y_var
-        return y, mean, precision
+    def de_whiten_precision(self, precision):
+        return precision / self.y_var
 
-    def objective(self, x, y):
-
-        # run mean and precision networks
-        mean = self.mean(x)
-        precision = self.precision(x)
-
-        # no gradient adjustments
-        if self.grad_mode is None:
-            # use negative log likelihood
-            loss_mean = -self.ll(*self.whiten(y, mean, precision))
-            loss_precision = loss_mean
-
-        # using gradient adjustment
-        else:
-            # compute weights
-            w = tf.stop_gradient(precision) if self.grad_mode == 'normalized' else tf.constant(1.0, dtype=tf.float32)
-
-            # mean loss is (weighted) negative log likelihood with constant precision
-            y_white = (y - self.y_mean) / self.y_std
-            loss_mean = tf.reduce_sum(tf.math.squared_difference(y_white, mean) * w) / tf.reduce_sum(w)
-
-            # precision loss is negative log likelihood with fixed mean
-            loss_precision = -self.ll(*self.whiten(y, tf.stop_gradient(mean), precision))
-
-        # compute adjusted log likelihood of non-scaled y using de-whitened model parameter
-        ll_adjusted = self.ll(*self.de_whiten(y, mean, precision))
-
-        # compute squared error for reporting purposes
-        mse = tf.math.squared_difference(y, mean * self.y_std + self.y_mean)
-
-        # add metrics for call backs
-        self.add_metric(-loss_precision, name='LL', aggregation='mean')
-        self.add_metric(tf.constant(0.0), name='KL', aggregation='mean')
-        self.add_metric(ll_adjusted, name='LL (adjusted)', aggregation='mean')
-        self.add_metric(mse, name='MSE', aggregation='mean')
-
-        # add minimization objective
-        self.add_loss(tf.reduce_mean(loss_mean + loss_precision) / 2)
-
-    def posterior_predictive_mean(self, x):
-        return self.mean(x) * self.y_std + self.y_mean
-
-    def posterior_predictive_std(self, x, **kwargs):
-        return self.y_std * self.precision(x) ** -0.5
-
-    def posterior_predictive_sample(self, x):
-        return self.posterior_predictive_mean(x) + self.posterior_predictive_std(x) * tf.random.normal(tf.shape(x))
-
-    def posterior_predictive_log_likelihood(self, x, y):
-        return tf.reduce_mean(self.ll(*self.de_whiten(y, self.mean(x), self.precision(x))))
+    def de_whiten_log_precision(self, log_precision):
+        return log_precision - tf.math.log(self.y_var)
 
     def call(self, inputs, **kwargs):
         self.objective(x=inputs['x'], y=inputs['y'])
         return tf.constant(0.0, dtype=tf.float32)
 
 
-class NormalRegressionWithVariationalPrecision(tf.keras.Model, VariationalVariance):
+class NormalRegression(LocationScaleRegression):
+
+    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, **kwargs):
+        super(NormalRegression, self).__init__(y_mean, y_var)
+        assert isinstance(d_in, int) and d_in > 0
+        assert isinstance(d_hidden, int) and d_hidden > 0
+        assert isinstance(d_out, int) and d_out > 0
+
+        # build parameter networks
+        self.mean = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
+        self.precision = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='lambda')
+
+    def ll(self, y, mean, precision, whiten_targets):
+        if whiten_targets:
+            y = self.whiten_targets(y)
+        else:
+            mean = self.de_whiten_mean(mean)
+            precision = self.de_whiten_precision(precision)
+        return tfp.distributions.MultivariateNormalDiag(loc=mean, scale_diag=precision ** -0.5).log_prob(y)
+
+    def objective(self, x, y):
+
+        # run parameter networks
+        mean = self.mean(x)
+        precision = self.precision(x)
+
+        # compute log likelihood on whitened targets
+        ll_whitened = self.ll(y, mean, precision, whiten_targets=True)
+
+        # use negative log likelihood on whitened targets as minimization objective
+        self.add_loss(-tf.reduce_mean(ll_whitened))
+
+        # compute de-whitened performance
+        ll = self.ll(y, mean, precision, whiten_targets=False)
+        rmse = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mean)), axis=-1))
+
+        # assign model's log likelihood (Bayesian methods will use log posterior predictive likelihood)
+        ll_model = ll
+
+        # additional observation metrics
+        self.add_metric(ll_whitened, name='LL (whitened)', aggregation='mean')
+        self.add_metric(ll, name='LL', aggregation='mean')
+        self.add_metric(ll_model, name='Model LL', aggregation='mean')
+        self.add_metric(rmse, name='RMSE', aggregation='mean')
+
+    def model_mean(self, x):
+        """Model mean is simply the mean network's output trained using maximum likelihood"""
+        return self.de_whiten_mean(self.mean(x))
+
+    def model_stddev(self, x):
+        """Model standard dev. is simply the transformed precision network's output trained using maximum likelihood"""
+        return self.de_whiten_stddev(self.precision(x) ** -0.5)
+
+
+class VariationalPrecisionNormalRegression(tf.keras.Model, VariationalVariance):
 
     def __init__(self, d_in, d_hidden, f_hidden, d_out, prior_type, prior_fam, y_mean, y_var, n_mc=1, **kwargs):
         tf.keras.Model.__init__(self)
@@ -376,11 +372,6 @@ if __name__ == '__main__':
     # enable background tiles on plots
     sns.set(color_codes=True)
 
-    # random number seeds
-    seed = 1234
-    np.random.seed(seed)
-    tf.random.set_seed(seed)
-
     # unit test
     test = np.random.uniform(-10, 10, 100)
     assert (np.abs(softplus_inverse(tf.nn.softplus(test)) - test) < 1e-6).all()
@@ -389,59 +380,61 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--prior', type=str, default='VBEM',
-                        help='{MLE, Standard, VAMP, VAMP*, xVAMP, xVAMP*, VBEM, VBEM*}')
+    parser.add_argument('--algorithm', type=str, default='Normal', help='algorithm')
+    parser.add_argument('--prior_type', default='xVAMP*', type=str, help='prior type')
+    parser.add_argument('--seed', default=1234, type=int, help='prior type')
     args = parser.parse_args()
+
+    # random number seeds
+    np.random.seed(args.seed)
+    tf.random.set_seed(args.seed)
 
     # set configuration
     D_HIDDEN = 50
-    PRIOR_TYPE = args.prior
+    PRIOR_TYPE = args.prior_type
+    PRIOR_FAM = 'Gamma' if 'Gamma' in args.algorithm else 'LogNormal'
     N_MC_SAMPLES = 50
     LEARNING_RATE = 1e-2
+    CLIP_VALUE = None if args.algorithm == 'Normal' else 0.5
     EPOCHS = int(6e3)
 
     # load data
     x_train, y_train, x_eval, true_mean, true_std = generate_toy_data()
     ds_train = tf.data.Dataset.from_tensor_slices({'x': x_train, 'y': y_train}).batch(x_train.shape[0])
 
+    # compute standard prior according to prior family
+    A, B = prior_params(1 / true_std[(np.min(x_train) <= x_eval) * (x_eval <= np.max(x_train))] ** 2, PRIOR_FAM)
+
     # VAMP prior pseudo-input initializers
     U = np.expand_dims(np.linspace(np.min(x_eval), np.max(x_eval), 20), axis=-1)
 
-    # loop over the prior families
-    for PRIOR_FAM in ['Gamma', 'LogNormal']:
+    # pick the appropriate model
+    MODEL = NormalRegression if args.algorithm == 'Normal' else VariationalPrecisionNormalRegression
 
-        # compute standard prior according to prior family
-        A, B = prior_params(1 / true_std[(np.min(x_train) <= x_eval) * (x_eval <= np.max(x_train))] ** 2, PRIOR_FAM)
+    # initialize model instance
+    mdl = MODEL(d_in=x_train.shape[1],
+                d_hidden=D_HIDDEN,
+                f_hidden='sigmoid',
+                d_out=y_train.shape[1],
+                y_mean=0.0,
+                y_var=1.0,
+                a=A,
+                b=B,
+                k=20,
+                u=U,
+                n_mc=N_MC_SAMPLES)
 
-        # declare model
-        mdl = NormalRegressionWithVariationalPrecision(d_in=x_train.shape[1],
-                                                       d_hidden=D_HIDDEN,
-                                                       f_hidden='sigmoid',
-                                                       d_out=y_train.shape[1],
-                                                       prior_type=PRIOR_TYPE,
-                                                       prior_fam=PRIOR_FAM,
-                                                       y_mean=0.0,
-                                                       y_var=1.0,
-                                                       a=A,
-                                                       b=B,
-                                                       k=20,
-                                                       u=U,
-                                                       n_mc=N_MC_SAMPLES)
+    # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
+    optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, clipvalue=CLIP_VALUE)
+    mdl.compile(optimizer=optimizer, loss=[None], run_eagerly=False)
 
-        # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
-        optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, clipvalue=0.5)
-        mdl.compile(optimizer=optimizer, loss=[None], run_eagerly=False)
+    # train model
+    hist = mdl.fit(ds_train, epochs=EPOCHS, verbose=0, callbacks=[RegressionCallback(EPOCHS)])
 
-        # train, evaluate on test points, and plot results
-        hist = mdl.fit(ds_train, epochs=EPOCHS, verbose=0, callbacks=[RegressionCallback(EPOCHS)])
-        plt.figure()
-        plt.plot(hist.history['ELL (adjusted)'])
-
-        # print and plot results
-        mdl_mean, mdl_std = mdl.posterior_mean(x_eval), mdl.posterior_stddev(x_eval)
-        fig = fancy_plot(x_train, y_train, x_eval, true_mean, true_std, mdl_mean, mdl_std, mdl.prior_fam + '-Normal')
-        if PRIOR_TYPE == 'vamp_uniform':
-            fig.savefig(os.path.join('assets', 'fig_vamp_uniform_' + mdl.prior_fam + '.pdf'))
-
-    # hold the plots
+    # plot results for toy data
+    mdl_mean, mdl_std = mdl.model_mean(x_eval), mdl.model_stddev(x_eval)
+    fig = plt.figure()
+    fig.suptitle(args.algorithm)
+    plt.plot(hist.history['Model LL'])
+    fancy_plot(x_train, y_train, x_eval, true_mean, true_std, mdl_mean, mdl_std, args.algorithm)
     plt.show()
