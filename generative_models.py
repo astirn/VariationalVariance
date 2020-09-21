@@ -6,7 +6,7 @@ from matplotlib import pyplot as plt
 from scipy.stats import gamma
 
 from generative_data import load_data_set
-from utils_model import expected_log_normal, VariationalVariance
+from utils_model import expected_log_normal, mixture_proportions, VariationalVariance
 from callbacks import LearningCurveCallback, ReconstructionCallback, LatentVisualizationCallback2D
 
 # workaround: https://github.com/tensorflow/tensorflow/issues/34888
@@ -168,10 +168,6 @@ class VAE(tf.keras.Model):
                                 tf.constant(np.prod(self.dim_x), dtype=tf.int32)), axis=0)  # event dimension
         return param_shape
 
-    @staticmethod
-    def mixture_proportions(mu):
-        return tfp.distributions.Categorical(logits=tf.transpose(tf.ones(tf.shape(mu)[:2])))
-
     def posterior_predictive_moments_and_samples(self, params):
 
         # get posterior predictive distribution
@@ -283,7 +279,7 @@ class FixedVarianceNormalVAE(VAE):
         for m in tf.unstack(mu):
             p = tfp.distributions.Normal(loc=m, scale=self.standard_deviation)
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
-        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
+        return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
 
 class NormalVAE(VAE):
@@ -378,7 +374,7 @@ class NormalVAE(VAE):
         for m, s in zip(tf.unstack(mu), tf.unstack(sigma)):
             p = tfp.distributions.Normal(loc=m, scale=s)
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
-        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
+        return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
 
 class StudentVAE(VAE):
@@ -443,7 +439,7 @@ class StudentVAE(VAE):
         for m, n, s in zip(tf.unstack(mu), tf.unstack(nu), tf.unstack(sigma)):
             p = tfp.distributions.StudentT(df=n + self.min_dof, loc=m, scale=s)
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
-        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
+        return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
 
 class VariationalVarianceVAE(VAE, VariationalVariance):
@@ -514,7 +510,7 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
         for m, a, b in zip(tf.unstack(mu), tf.unstack(alpha), tf.unstack(beta)):
             p = tfp.distributions.StudentT(df=2 * a, loc=m, scale=tf.sqrt(b / a))
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
-        return tfp.distributions.Mixture(cat=self.mixture_proportions(mu), components=components)
+        return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
 
 if __name__ == '__main__':

@@ -27,9 +27,11 @@ class RegressionCallback(tf.keras.callbacks.Callback):
             prefix = 'val_' if sum(['val_' in key for key in logs.keys()]) else ''
             print('Epoch {:d}/{:d},'.format(epoch, self.n_epochs),
                   'Loss {:.4f},'.format(logs[prefix + 'loss']),
-                  'LL {:.4f},'.format(logs[prefix + 'LL']),
+                  'ELL {:.4f},'.format(logs[prefix + 'ELL']),
+                  'LPPL{:.4f},'.format(logs[prefix + 'LPPL']),
                   'KL {:.4f}'.format(logs[prefix + 'KL']),
-                  'LL Adjusted {:.4f},'.format(logs[prefix + 'LL (adjusted)']),
+                  'ELL Adjusted {:.4f},'.format(logs[prefix + 'ELL (adjusted)']),
+                  'LPPL Adjusted {:.4f},'.format(logs[prefix + 'LPPL (adjusted)']),
                   'RMSE {:.4f}'.format(np.sqrt(logs[prefix + 'MSE'])))
 
 

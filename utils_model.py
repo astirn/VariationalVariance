@@ -44,6 +44,14 @@ def student_log_prob(x, mu, alpha, beta):
     return tf.reduce_sum(log_p, axis=-1)
 
 
+def mixture_proportions(archetype):
+    """
+    :param archetype: something of shape [num MC samples, batch size, event size]
+    :return: a uniform categorical distribution over MC samples
+    """
+    return tfp.distributions.Categorical(logits=tf.transpose(tf.ones(tf.shape(archetype)[:2])))
+
+
 class VariationalVariance(object):
 
     def __init__(self, dim_precision, prior_type, prior_fam, **kwargs):
