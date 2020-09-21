@@ -173,8 +173,8 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         ell_de_whitened = self.expected_ll(y, mu, alpha, beta, whiten_targets=False)
 
         # assign model's log likelihood as the log posterior predictive likelihood
-        ll_model = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=True).log_prob(y)
-        ll_model_whiten = self.posterior_predictive(mu, alpha, beta, p_samples, de_whiten=False).log_prob(y)
+        ll_model = self.log_posterior_predictive_likelihood(y, mu, alpha, beta, p_samples, whiten_targets=False)
+        # ll_model_whiten = self.log_posterior_predictive_likelihood(y, mu, alpha, beta, p_samples, whiten_targets=True)
 
         # observation metrics
         self.add_metric(elbo, name='ELBO', aggregation='mean')
@@ -182,22 +182,23 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         self.add_metric(dkl, name='KL', aggregation='mean')
         self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(ll_model_whiten, name='Model LL (whitened)', aggregation='mean')
+        # self.add_metric(ll_model_whiten, name='Model LL (whitened)', aggregation='mean')
         self.add_metric(self.root_mean_squared_error(mu, y), name='RMSE', aggregation='mean')
 
-    def posterior_predictive(self, mu, alpha, beta, p_samples, de_whiten=False):
-        shift = self.y_mean if de_whiten else 0.0
-        scale = self.y_std if de_whiten else 1.0
+    def log_posterior_predictive_likelihood(self, y, mu, alpha, beta, p_samples, whiten_targets=False):
+        y = self.whiten_targets(y) if whiten_targets else y
+        shift = self.y_mean if not whiten_targets else 0.0
+        scale = self.y_std if not whiten_targets else 1.0
         if self.prior_fam == 'Gamma':
             py_x = tfp.distributions.StudentT(df=2 * alpha, loc=mu * scale + shift, scale=tf.sqrt(beta / alpha) * scale)
-            return tfp.distributions.Independent(py_x, reinterpreted_batch_ndims=1)
+            return tfp.distributions.Independent(py_x, reinterpreted_batch_ndims=1).log_prob(y)
         elif self.prior_fam == 'LogNormal':
             components = []
             for p in tf.unstack(p_samples):
                 p = tfp.distributions.Normal(loc=mu * scale + shift, scale=p ** -0.5 * scale)
                 components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
             py_x = tfp.distributions.Mixture(cat=mixture_proportions(p_samples), components=components)
-            return py_x
+            return py_x.log_prob(y)
 
     def model_mean(self, x):
         """Model mean is simply the mean network's output as it is not latent during variational inference"""
@@ -310,7 +311,7 @@ if __name__ == '__main__':
     # pick the appropriate model
     MODEL = NormalRegression if args.algorithm == 'Normal' else VariationalPrecisionNormalRegression
 
-    # initialize model instance
+    # declare model instance
     mdl = MODEL(d_in=x_train.shape[1],
                 d_hidden=D_HIDDEN,
                 f_hidden='sigmoid',
