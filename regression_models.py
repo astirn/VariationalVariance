@@ -153,23 +153,6 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
 
         # use negative evidence lower bound as minimization objective
         elbo = ell - dkl
-
-        # compute adjusted log likelihood of non-scaled y using de-whitened model parameter
-        ll_adjusted = self.ll(*self.de_whiten(y, mu, qp.mean(), expected_log_lambda))
-
-        # compute squared error for reporting purposes
-        error_dist = tf.norm(y - (mu * self.y_std + self.y_mean), axis=-1)
-        squared_error = error_dist ** 2
-
-        # add metrics for call backs
-        self.add_metric(elbo, name='ELBO', aggregation='mean')
-        self.add_metric(ell, name='ELL', aggregation='mean')
-        self.add_metric(dkl, name='KL', aggregation='mean')
-        self.add_metric(ll_adjusted, name='ELL (adjusted)', aggregation='mean')
-        self.add_metric(error_dist, name='MAE', aggregation='mean')
-        self.add_metric(squared_error, name='MSE', aggregation='mean')
-
-        # add minimization objective
         self.add_loss(-tf.reduce_mean(elbo))
 
         # compute de-whitened performance
