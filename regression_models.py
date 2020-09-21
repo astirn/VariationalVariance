@@ -173,8 +173,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         ell_de_whitened = self.expected_ll(y, mu, alpha, beta, whiten_targets=False)
 
         # assign model's log likelihood as the log posterior predictive likelihood
-        ll_model = self.log_posterior_predictive_likelihood(y, mu, alpha, beta, p_samples, whiten_targets=False)
-        # ll_model_whiten = self.log_posterior_predictive_likelihood(y, mu, alpha, beta, p_samples, whiten_targets=True)
+        ll_model = self.log_posterior_predictive_likelihood(y, mu, alpha, beta, p_samples)
 
         # observation metrics
         self.add_metric(elbo, name='ELBO', aggregation='mean')
@@ -182,20 +181,17 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         self.add_metric(dkl, name='KL', aggregation='mean')
         self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        # self.add_metric(ll_model_whiten, name='Model LL (whitened)', aggregation='mean')
         self.add_metric(self.root_mean_squared_error(mu, y), name='RMSE', aggregation='mean')
 
-    def log_posterior_predictive_likelihood(self, y, mu, alpha, beta, p_samples, whiten_targets=False):
-        y = self.whiten_targets(y) if whiten_targets else y
-        shift = self.y_mean if not whiten_targets else 0.0
-        scale = self.y_std if not whiten_targets else 1.0
+    def log_posterior_predictive_likelihood(self, y, mu, alpha, beta, p_samples):
+        loc = self.de_whiten_mean(mu)
         if self.prior_fam == 'Gamma':
-            py_x = tfp.distributions.StudentT(df=2 * alpha, loc=mu * scale + shift, scale=tf.sqrt(beta / alpha) * scale)
+            py_x = tfp.distributions.StudentT(df=2 * alpha, loc=loc, scale=self.de_whiten_stddev(tf.sqrt(beta / alpha)))
             return tfp.distributions.Independent(py_x, reinterpreted_batch_ndims=1).log_prob(y)
         elif self.prior_fam == 'LogNormal':
             components = []
             for p in tf.unstack(p_samples):
-                p = tfp.distributions.Normal(loc=mu * scale + shift, scale=p ** -0.5 * scale)
+                p = tfp.distributions.Normal(loc=loc, scale=self.de_whiten_stddev(p ** -0.5))
                 components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
             py_x = tfp.distributions.Mixture(cat=mixture_proportions(p_samples), components=components)
             return py_x.log_prob(y)
@@ -272,11 +268,19 @@ if __name__ == '__main__':
     # enable background tiles on plots
     sns.set(color_codes=True)
 
-    # unit test
+    # unit tests for softplus inverse
     test = np.random.uniform(-10, 10, 100)
     assert (np.abs(softplus_inverse(tf.nn.softplus(test)) - test) < 1e-6).all()
     test = np.random.uniform(0, 10, 100)
     assert (np.abs(tf.nn.softplus(softplus_inverse(test)) - test) < 1e-6).all()
+
+    # unit tests for LocationScaleRegression class
+    lcr = LocationScaleRegression(y_mean=np.random.normal(0, 1), y_var=np.random.gamma(1, 1))
+    a = tf.random.gamma(shape=[100], alpha=1, beta=1, dtype=tf.float32)
+    b = tf.random.gamma(shape=[100], alpha=1, beta=1, dtype=tf.float32)
+    scale1 = lcr.de_whiten_stddev(tf.sqrt(b / a))
+    scale2 = lcr.de_whiten_precision(a / b) ** -0.5
+    assert tf.reduce_max(tf.math.squared_difference(scale1, scale2)) < 1e-10
 
     # script arguments
     parser = argparse.ArgumentParser()
