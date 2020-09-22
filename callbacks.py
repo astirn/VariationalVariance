@@ -27,6 +27,9 @@ class RegressionCallback(tf.keras.callbacks.Callback):
             validation_exists = sum(['val_' in key for key in logs.keys()]) > 0
             update_str = 'Epoch {:d}/{:d}'.format(epoch, self.n_epochs)
             for key, val in logs.items():
+                if 'MSE' in key:
+                    key = key.replace('MSE', 'RMSE')
+                    val = np.sqrt(val)
                 if not validation_exists:
                     update_str += ', ' + key + ' {:.4f}'.format(val)
                 elif validation_exists and 'val_' in key:

@@ -50,8 +50,8 @@ class LocationScaleRegression(tf.keras.Model):
     def de_whiten_log_precision(self, log_precision):
         return log_precision - tf.math.log(self.y_var)
 
-    def root_mean_squared_error(self, mean, y):
-        return tf.sqrt(tf.reduce_mean(tf.math.squared_difference(y, self.de_whiten_mean(mean)), axis=-1))
+    def squared_errors(self, mean, y):
+        return tf.norm(y - self.de_whiten_mean(mean), axis=-1) ** 2
 
     def call(self, inputs, **kwargs):
         self.objective(x=inputs['x'], y=inputs['y'])
@@ -100,7 +100,7 @@ class NormalRegression(LocationScaleRegression):
         self.add_metric(ll, name='LL', aggregation='mean')
         self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(self.root_mean_squared_error(mean, y), name='RMSE', aggregation='mean')
+        self.add_metric(self.squared_errors(mean, y), name='MSE', aggregation='mean')
 
     def model_mean(self, x):
         """Model mean is simply the mean network's output trained using maximum likelihood"""
@@ -181,7 +181,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         self.add_metric(dkl, name='KL', aggregation='mean')
         self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(self.root_mean_squared_error(mu, y), name='RMSE', aggregation='mean')
+        self.add_metric(self.squared_errors(mu, y), name='MSE', aggregation='mean')
 
     def log_posterior_predictive_likelihood(self, y, mu, alpha, beta, p_samples):
         loc = self.de_whiten_mean(mu)
