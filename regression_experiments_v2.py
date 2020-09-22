@@ -14,7 +14,7 @@ from regression_data import generate_toy_data
 from callbacks import RegressionCallback
 
 # import our regression models
-from regression_models import prior_params, NormalRegression, NormalRegressionWithVariationalPrecision
+from regression_models import prior_params, NormalRegression, VariationalPrecisionNormalRegression
 
 # import Detlefsen baseline model
 sys.path.append(os.path.join(os.getcwd(), 'john-master'))
@@ -22,7 +22,7 @@ from toy_regression import detlefsen_toy_baseline
 from experiment_regression import detlefsen_uci_baseline
 
 # results directory
-RESULTS_DIR = 'resultsV2'
+RESULTS_DIR = 'resultsV3'
 
 
 class MeanVarianceLogger(object):
@@ -99,63 +99,61 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     ds_eval = tf.data.Dataset.from_tensor_slices({'x': x_eval, 'y': y_eval})
     ds_eval = ds_eval.shuffle(10000, reshuffle_each_iteration=True).batch(batch_size)
 
-    # configure the model
-    if algorithm in {'Normal', 'Normal-ConstGrad', 'Normal-NormGrad'}:
+    # pick appropriate model and gradient clip value
+    if algorithm == 'Normal':
         model = NormalRegression
+        clip_value = None
     else:
-        model = NormalRegressionWithVariationalPrecision
-    if algorithm == 'Normal-ConstGrad':
-        grad_mode = 'constant'
-    elif algorithm == 'Normal-NormGrad':
-        grad_mode = 'normalized'
-    else:
-        grad_mode = None
+        model = VariationalPrecisionNormalRegression
+        clip_value = 0.5
+
+    # declare model instance
     mdl = model(d_in=x_train.shape[1],
                 d_hidden=d_hidden,
                 f_hidden=f_hidden,
                 d_out=y_train.shape[1],
-                prior_type=prior_type,
-                prior_fam=prior_fam,
                 y_mean=0.0 if dataset == 'toy' else np.mean(y_train, axis=0),
                 y_var=1.0 if dataset == 'toy' else np.var(y_train, axis=0),
+                prior_type=prior_type,
+                prior_fam=prior_fam,
+                num_mc_samples=num_mc_samples,
                 a=a,
                 b=b,
                 k=u.shape[0],
-                u=u,
-                grad_mode=grad_mode,
-                n_mc=num_mc_samples)
+                u=u)
+
+    # relevant metric names
+    model_ll = 'val_Model LL'
+    model_mse = 'val_MSE'
 
     # train the model
     callbacks = [RegressionCallback(epochs, parallel)]
     if early_stopping:
-        callbacks += [tf.keras.callbacks.EarlyStopping(monitor='val_LL', min_delta=1e-4, patience=500, mode='max')]
-    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=0.5), loss=[None])
+        callbacks += [tf.keras.callbacks.EarlyStopping(monitor=model_ll, min_delta=1e-4, patience=500, mode='max')]
+    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=clip_value), loss=[None])
     hist = mdl.fit(ds_train, validation_data=ds_eval, epochs=epochs, verbose=0, callbacks=callbacks)
 
     # test for NaN's
     nan_detected = bool(np.sum(np.isnan(hist.history['loss'])))
 
     # get index of best validation log likelihood
-    i_best = np.nanargmax(hist.history['val_LL'])
-    if i_best != np.nanargmax(hist.history['val_LL (adjusted)']):
-        delta = np.abs(np.max(hist.history['val_LL (adjusted)']) - hist.history['val_LL (adjusted)'][i_best])
-        warnings.warn('LL != LL adjusted by {:f}'.format(delta))
-    if np.nanargmax(hist.history['val_LL (adjusted)']) >= 0.9 * epochs:
-        warnings.warn('LL not converged!')
+    i_best = np.nanargmax(hist.history[model_ll])
+    if np.nanargmax(hist.history[model_ll]) >= 0.9 * epochs:
+        warnings.warn('Model not converged!')
 
     # retrieve performance metrics
-    ll = hist.history['val_LL (adjusted)'][i_best]
-    rmse = np.sqrt(hist.history['val_MSE'][i_best])
+    ll = hist.history[model_ll][i_best]
+    rmse = np.sqrt(hist.history[model_mse][i_best])
 
     # evaluate predictive mean and variance
     mdl.num_mc_samples = 2000
-    mdl_mean, mdl_std = mdl.posterior_predictive_mean(x_eval).numpy(), mdl.posterior_predictive_std(x_eval).numpy()
+    mdl_mean, mdl_std = mdl.model_mean(x_eval).numpy(), mdl.model_stddev(x_eval).numpy()
 
     return ll, rmse, mdl_mean, mdl_std, nan_detected, mdl
 
 
 def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
-    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Normal-ConstGrad', 'Normal-NormGrad', 'Gamma-Normal', 'LogNormal-Normal'}
+    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Gamma-Normal', 'LogNormal-Normal'}
     assert not (algorithm == 'Detlefsen (fixed)' and dataset != 'toy')
     assert mode in {'replace', 'resume'}
 
@@ -168,10 +166,6 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
         prior_fam = 'LogNormal'
         prior_type = kwargs.pop('prior_type')
         base_name = algorithm + '_' + prior_type
-    elif algorithm in {'Normal', 'Normal-ConstGrad', 'Normal-NormGrad'}:
-        prior_fam = ''
-        prior_type = 'N/A'
-        base_name = algorithm
     else:
         prior_fam = ''
         prior_type = 'N/A'
@@ -289,7 +283,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             ll, rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
                                                             epochs,  batch_size, x_train, y_train, x_eval, y_eval,
                                                             parallel, **kwargs)
-            print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials), 'LL Exact:', ll, 'RMSE:', rmse)
+            print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials), 'LL:', ll, 'RMSE:', rmse)
             if nans:
                 print('**** NaN Detected ****')
                 print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
