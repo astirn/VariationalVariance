@@ -173,7 +173,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
     # dataset specific hyper-parameters
     n_trials = 5 if dataset in {'protein', 'year'} else 20
-    batch_size = 500 if dataset == 'toy' else 512
+    batch_size = 500 if dataset == 'toy' else 256
 
     # establish experiment directory
     experiment_dir = 'regression_toy' if dataset == 'toy' else 'regression_uci'
@@ -312,7 +312,7 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--algorithm', type=str, default='Detlefsen', help='algorithm')
+    parser.add_argument('--algorithm', type=str, default='Normal', help='algorithm')
     parser.add_argument('--dataset', type=str, default='boston', help='data set name = {toy} union UCI sets')
     parser.add_argument('--batch_iterations', type=int, default=int(20e4), help='batch iterations')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
