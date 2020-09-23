@@ -14,7 +14,7 @@ declare -a BatchIterations=(10000 200000)
 declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
 
 # run UCI regression experiments that don't iterate over different priors
-declare -a Algorithms=("Detlefsen" "Normal" "Normal-ConstGrad" "Normal-NormGrad")
+declare -a Algorithms=("Detlefsen" "Normal")
 for iters in "${BatchIterations[@]}"; do
   for data in "${Datasets[@]}"; do
     for alg in "${Algorithms[@]}"; do
@@ -64,4 +64,9 @@ for iters in "${BatchIterations[@]}"; do
   done
 done
 wait
+
+# print all done!
 echo "UCI done!"
+
+# run analysis scripts
+python regression_analysis.py --experiment uci

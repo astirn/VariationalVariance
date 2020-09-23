@@ -15,6 +15,8 @@ for alg in "${Algorithms[@]}"; do
       --batch_iterations 6000 --k 20
   done
 done
+
+# print all done
 echo "toy experiments done!"
 
 # run analysis scripts
