@@ -199,17 +199,16 @@ def normal_log_prob_w_prior(x, mean, var):
 #%%
 def t_likelihood(x, mean, var, w = None):
     w = torch.ones(x.shape[0], device=x.device) if w is None else w
-        
-    c = -0.5*math.log(2*math.pi)
-    A = logmeanexp(c - var.log()/2 - (x - mean)**2 / (2*var), dim=0)
-        # mean shape : [batch,dim], var shape [num,draws,batch,dim]
-        # shape [batch, dim]
-    A = A / w.reshape(-1,1)
-        # mean over batch size with inclusion prob if given
-        # mean over dim
-    A = A.sum() 
-    
-    return A
+
+    # gaussian log probability
+    log_normal_likelihood = torch.distributions.Normal(mean, var.sqrt()).log_prob(x).sum(dim=-1)
+
+    # MC integrate over variance samples
+    log_student_likelihood = torch.logsumexp(log_normal_likelihood, dim=0) - torch.tensor(float(var.shape[0])).log()
+
+    # apply weights and take average
+    return (log_student_likelihood / w).sum() / x.shape[0]
+
 #%%
 def normalize_y(y):
     y_mean = y.mean(axis=0)

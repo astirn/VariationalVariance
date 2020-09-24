@@ -21,7 +21,7 @@ from utils import timer, batchify, normalize_y, normal_log_prob, RBF, \
 #%%
 def argparser():
     parser = argparse.ArgumentParser(formatter_class = argparse.ArgumentDefaultsHelpFormatter)
-    
+
     gs = parser.add_argument_group('General settings')
     gs.add_argument('--model', type=str, default='john', help='model to use',
                     choices=['gp', 'sgp', 'nn', 'mcdnn', 'ensnn', 'bnn', 'rbfnn', 'gpnn', 'john'])
@@ -33,7 +33,7 @@ def argparser():
     gs.add_argument('--cuda', type=bool, default=True, help='use cuda')
     
     ms = parser.add_argument_group('Model specific settings')
-    ms.add_argument('--batch_size', type=int, default=512, help='batch size')
+    ms.add_argument('--batch_size', type=int, default=256, help='batch size')
     ms.add_argument('--shuffel', type=bool, default=True, help='shuffel data during training')
     ms.add_argument('--lr', type=float, default=1e-4, help='learning rate')
     ms.add_argument('--iters', type=int, default=10000, help='number of iterations')
@@ -41,7 +41,7 @@ def argparser():
     ms.add_argument('--inducing', type=int, default=500, help='number of inducing points')
     ms.add_argument('--n_clusters', type=int, default=500, help='number of cluster centers')
     ms.add_argument('--n_models', type=int, default=5, help='number of ensemble')
-    
+
     # Parse and return
     args = parser.parse_args()
     return args
@@ -558,7 +558,6 @@ def john(args, X, y, Xval, yval):
                 else:
                     samples_var = gamma_dist.rsample(torch.Size([1000]))
                     x_var = (1.0/(samples_var+1e-8))
-                # var = (1-s) * x_var + s*torch.tensor([y_std**2], device=x.device) # HYPERPARAMETER
                 var = (1-s) * x_var + s * y_std ** 2
 
             else:
@@ -617,7 +616,7 @@ def john(args, X, y, Xval, yval):
             if not switch:
                 optimizer.zero_grad()
                 m, v = model(data, switch)
-                loss = -t_likelihood(label.reshape(-1,1), m.reshape(-1,1), v.reshape(1,-1,1)) / X.shape[0]
+                loss = -t_likelihood(label, m, v.unsqueeze(0))
                 loss.backward()
                 optimizer.step()
             else:
@@ -626,8 +625,7 @@ def john(args, X, y, Xval, yval):
                     optimizer.zero_grad()
                     batch = locality_sampler2(mean_psu,mean_ssu,mean_Q,mean_w)
                     m, v = model(X[batch], switch)
-                    loss = -t_likelihood(y[batch].reshape(-1, 1), m.reshape(-1, 1), v.reshape(v.shape[0], -1, 1),
-                                         mean_w[batch].repeat(y.shape[1])) / X.shape[0]
+                    loss = -t_likelihood(y[batch], m, v, mean_w[batch])
                     loss.backward()
                     optimizer.step()
                 else:
@@ -635,15 +633,9 @@ def john(args, X, y, Xval, yval):
                     optimizer2.zero_grad()
                     batch = locality_sampler2(var_psu,var_ssu,var_Q,var_w)
                     m, v = model(X[batch], switch)
-                    loss = -t_likelihood(y[batch].reshape(-1, 1), m.reshape(-1, 1), v.reshape(v.shape[0], -1, 1),
-                                         var_w[batch].repeat(y.shape[1])) / X.shape[0]
+                    loss = -t_likelihood(y[batch], m, v, var_w[batch])
                     loss.backward()
                     optimizer2.step()
-            
-        # if it % 500 == 0:
-        #     m, v = model(data, switch)
-        #     loss = -(-v.log()/2 - ((m-label)**2).reshape(1, m.shape[0], m.shape[1]) / (2 * v)).mean()
-        #     print('Iter {0}/{1}, Loss {2}'.format(it, args.iters, loss.item()))
 
         # test on validation set once per epoch
         if it % its_per_epoch == 0:
@@ -653,10 +645,9 @@ def john(args, X, y, Xval, yval):
             m = m * y_std + y_mean
             v = v * y_std ** 2
             if switch == 0:
-                ll = t_likelihood(y_eval.reshape(-1, 1), m.reshape(-1, 1), v.reshape(-1, 1))
+                ll = t_likelihood(y_eval, m, v.unsqueeze(0)).item()
             else:
-                ll = t_likelihood(y_eval.reshape(-1, 1), m.reshape(-1, 1), v.reshape(v.shape[0], -1, 1))
-            ll = ll.item() / x_eval.shape[0]
+                ll = t_likelihood(y_eval, m, v).item()
             if it % (500 * its_per_epoch) == 0:
                 print('Epoch {:d}/{:d},'.format(it // its_per_epoch, epochs), 'Loss {:.4f},'.format(ll))
 
@@ -679,19 +670,6 @@ def john(args, X, y, Xval, yval):
     i_best = np.argmax(ll_list)
 
     return ll_list[i_best], mae_list[i_best], rmse_list[i_best]
-
-    # model.eval()
-    #
-    # data = torch.tensor(Xval).to(torch.float32).to(device)
-    # label = torch.tensor(yval).to(torch.float32).to(device)
-    # with torch.no_grad():
-    #     m, v = model(data, switch)
-    # m = m * y_std + y_mean
-    # v = v * y_std**2
-    # #log_px = normal_log_prob(label, m, v).mean(dim=0) # check for correctness
-    # log_px = t_likelihood(label.reshape(-1,1), m, v) / Xval.shape[0]# check
-    # rmse = ((label - m)**2).mean().sqrt()
-    # return log_px.mean().item(), rmse.item()
 
 
 def detlefsen_uci_baseline(x_train, y_train, x_test, y_test, iterations, batch_size):
