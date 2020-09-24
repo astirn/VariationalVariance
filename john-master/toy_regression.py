@@ -357,9 +357,6 @@ def john(X, y, x, bug_fix):
     var_w = torch.Tensor(var_w)
     model.train()
 
-    def neg_ll(y, m, v):
-        return 0.5 * (np.log(2 * np.pi) + v.log() + (m - y) ** 2 / v)
-
     while it < n_iter:
         model.train()
         switch = 1.0 if it >5000 else 0.0
@@ -367,15 +364,12 @@ def john(X, y, x, bug_fix):
         if it % 11: opt_switch = opt_switch + 1 # change between var and mean optimizer
         
         if not switch:
-            optimizer.zero_grad();
+            optimizer.zero_grad()
             m, v = model(X, switch)
             if not bug_fix:
                 loss = -(-v.log() - (m.flatten()-y)**2 / (2 * v)).sum()
             else:
-                loss = neg_ll(y.reshape(-1, 1), m, v.reshape(-1, 1))
-                assert len(loss) == len(y)
-                assert len(loss) == len(m)
-                loss = loss.sum()
+                loss = -t_likelihood(y.unsqueeze(-1), m, v.unsqueeze(0).unsqueeze(0))
             loss.backward()
             optimizer.step()
         else:
@@ -386,10 +380,9 @@ def john(X, y, x, bug_fix):
                     m, v = model(X[batch], switch)
                     if not bug_fix:
                         loss = -(-v.log() - ((m.flatten()-y[batch])**2).reshape(1,-1,1) / (2 * v)) / mean_w[batch].reshape(1,-1,1)
+                        loss = loss.sum()  # why the f*** is it so slow
                     else:
-                        loss = neg_ll(y[batch].reshape(1, -1, 1), m.reshape(1, -1, 1), v) / mean_w[batch].reshape(1, -1, 1)
-                        assert len(loss) == len(v)
-                    loss = loss.sum() # why the f*** is it so slow
+                        loss = -t_likelihood(y[batch].unsqueeze(-1), m, v, mean_w[batch])
                     loss.backward()
                     optimizer.step()
             else:
@@ -400,10 +393,9 @@ def john(X, y, x, bug_fix):
                     diff = ((m.flatten()-y[batch])**2).reshape(1,-1,1)
                     if not bug_fix:
                         loss = -(-(diff.log() / 2 + diff/v + v.log() / 2)) / var_w[batch].reshape(1,-1,1)
+                        loss = loss.sum()  # why the f*** is it so slow
                     else:
-                        loss = neg_ll(y[batch].reshape(1, -1, 1), m.reshape(1, -1, 1), v) / var_w[batch].reshape(1, -1, 1)
-                        assert len(loss) == len(v)
-                    loss = loss.sum() # why the f*** is it so slow
+                        loss = -t_likelihood(y[batch].unsqueeze(-1), m, v, var_w[batch])
                     loss.backward()
                     optimizer2.step()
                     
@@ -413,16 +405,16 @@ def john(X, y, x, bug_fix):
             if not bug_fix:
                 loss = -(-v.log() - (m.flatten()-y)**2 / (2 * v)).mean()
             else:
-                loss = 0.5 * (v.log() + (m.flatten() - y)**2 / v).mean()
+                if switch == 0:
+                    v = v.unsqueeze(0).unsqueeze(0)
+                loss = -t_likelihood(y.unsqueeze(-1), m, v)
             print('Iter {0}/{1}, Loss {2}'.format(it, n_iter, loss.item()))
         it+=1
         
     model.eval()
     with torch.no_grad():
         mean_train, var_train = model(X, switch)
-        log_px = -neg_ll(y.reshape(1, -1, 1), mean_train.reshape(1, -1, 1), var_train)
-        assert len(log_px) == len(var_train)
-        log_px = log_px.mean()
+        log_px = t_likelihood(y.unsqueeze(-1), mean_train, var_train)
         mean, var = model(x, switch)
     return mean.numpy(), var.mean(dim=0).sqrt().numpy(), log_px.numpy()
 
