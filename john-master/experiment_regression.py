@@ -19,13 +19,15 @@ from utils import timer, batchify, normalize_y, normal_log_prob, RBF, \
     
 
 #%%
-def argparser():
-    parser = argparse.ArgumentParser(formatter_class = argparse.ArgumentDefaultsHelpFormatter)
+def argparser(parser=None):
+    if parser is None:
+        parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     gs = parser.add_argument_group('General settings')
     gs.add_argument('--model', type=str, default='john', help='model to use',
                     choices=['gp', 'sgp', 'nn', 'mcdnn', 'ensnn', 'bnn', 'rbfnn', 'gpnn', 'john'])
-    gs.add_argument('--dataset', type=str, default='boston', help='dataset to use')
+    if 'dataset' not in parser.parse_args():
+        gs.add_argument('--dataset', type=str, default='boston', help='dataset to use')
     gs.add_argument('--seed', type=int, default=1, help='random state of data-split')
     gs.add_argument('--test_size', type=float, default=0.1, help='test set size, as a procentage')
     gs.add_argument('--repeats', type=int, default=20, help='number of repeatitions')
@@ -672,10 +674,10 @@ def john(args, X, y, Xval, yval):
     return ll_list[i_best], mae_list[i_best], rmse_list[i_best]
 
 
-def detlefsen_uci_baseline(x_train, y_train, x_test, y_test, iterations, batch_size):
+def detlefsen_uci_baseline(x_train, y_train, x_test, y_test, iterations, batch_size, parser=None):
 
     # get default input arguments
-    args = argparser()
+    args = argparser(parser)
 
     # set passed in arguments
     args.iters = iterations

@@ -277,7 +277,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             ll, rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=True)
 
         elif algorithm == 'Detlefsen' and dataset != 'toy':
-            ll, rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size)
+            ll, rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size, parser)
 
         else:
             ll, rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
