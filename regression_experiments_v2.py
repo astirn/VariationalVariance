@@ -14,7 +14,7 @@ from regression_data import generate_toy_data
 from callbacks import RegressionCallback
 
 # import our regression models
-from regression_models import prior_params, NormalRegression, VariationalPrecisionNormalRegression
+from regression_models import prior_params, NormalRegression, StudentRegression, VariationalPrecisionNormalRegression
 
 # import Detlefsen baseline model
 sys.path.append(os.path.join(os.getcwd(), 'john-master'))
@@ -103,6 +103,9 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     if algorithm == 'Normal':
         model = NormalRegression
         clip_value = None
+    elif algorithm == 'Student':
+        model = StudentRegression
+        clip_value = None
     else:
         model = VariationalPrecisionNormalRegression
         clip_value = 0.5
@@ -153,7 +156,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
 
 def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
-    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Gamma-Normal', 'LogNormal-Normal'}
+    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student', 'Gamma-Normal', 'LogNormal-Normal'}
     assert not (algorithm == 'Detlefsen (fixed)' and dataset != 'toy')
     assert mode in {'replace', 'resume'}
 

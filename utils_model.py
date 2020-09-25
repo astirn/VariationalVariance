@@ -50,6 +50,19 @@ def mixture_proportions(archetype):
     return tfp.distributions.Categorical(logits=tf.transpose(tf.ones(tf.shape(archetype)[:2])))
 
 
+def monte_carlo_student_t(mean, precision_samples):
+    """
+    :param mean: student's T location parameter
+    :param precision_samples: precision samples
+    :return: a uniform mixture of Normal distributions with common location but scales defined from precision samples
+    """
+    components = []
+    for p in tf.unstack(precision_samples):
+        normal = tfp.distributions.Normal(loc=mean, scale=p ** -0.5)
+        components.append(tfp.distributions.Independent(normal, reinterpreted_batch_ndims=1))
+    return tfp.distributions.Mixture(cat=mixture_proportions(precision_samples), components=components)
+
+
 class VariationalVariance(object):
 
     def __init__(self, dim_precision, prior_type, prior_fam, **kwargs):

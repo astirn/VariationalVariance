@@ -102,6 +102,10 @@ class NormalRegression(LocationScaleRegression):
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
         self.add_metric(self.squared_errors(mean, y), name='MSE', aggregation='mean')
 
+    def model(self, x):
+        """Model is simply the multi-variate normal likelihood"""
+        return tfp.distributions.MultivariateNormalDiag(self.model_mean(x), self.model_stddev(x))
+
     def model_mean(self, x):
         """Model mean is simply the mean network's output trained using maximum likelihood"""
         return self.de_whiten_mean(self.mean(x))
@@ -109,6 +113,77 @@ class NormalRegression(LocationScaleRegression):
     def model_stddev(self, x):
         """Model standard dev. is simply the transformed precision network's output trained using maximum likelihood"""
         return self.de_whiten_stddev(self.precision(x) ** -0.5)
+
+    def model_sample(self, x, sample_shape=()):
+        """Model sample"""
+        return self.model(x).sample(sample_shape)
+
+
+class StudentRegression(LocationScaleRegression):
+
+    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, **kwargs):
+        super(StudentRegression, self).__init__(y_mean, y_var)
+        assert isinstance(d_in, int) and d_in > 0
+        assert isinstance(d_hidden, int) and d_hidden > 0
+        assert isinstance(d_out, int) and d_out > 0
+
+        # build parameter networks
+        self.mu = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
+        self.alpha = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='alpha')
+        self.beta = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='beta')
+
+    def ll(self, y, mu, alpha, beta, whiten_targets):
+        if whiten_targets:
+            y = self.whiten_targets(y)
+            loc = mu
+            scale = tf.sqrt(beta / alpha)
+        else:
+            loc = self.de_whiten_mean(mu)
+            scale = self.de_whiten_stddev(tf.sqrt(beta / alpha))
+        py_x = tfp.distributions.StudentT(df=2 * alpha, loc=loc, scale=scale)
+        return tfp.distributions.Independent(py_x, reinterpreted_batch_ndims=1).log_prob(y)
+
+    def objective(self, x, y):
+
+        # run parameter networks
+        mu = self.mu(x)
+        alpha = self.alpha(x)
+        beta = self.beta(x)
+
+        # compute log likelihood on whitened targets
+        ll = self.ll(y, mu, alpha, beta, whiten_targets=True)
+
+        # use negative log likelihood on whitened targets as minimization objective
+        self.add_loss(-tf.reduce_mean(ll))
+
+        # compute de-whitened log likelihood
+        ll_de_whitened = self.ll(y, mu, alpha, beta, whiten_targets=False)
+
+        # assign model's log likelihood (Bayesian methods will use log posterior predictive likelihood instead)
+        ll_model = ll_de_whitened
+
+        # observation metrics
+        self.add_metric(ll, name='LL', aggregation='mean')
+        self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
+        self.add_metric(ll_model, name='Model LL', aggregation='mean')
+        self.add_metric(self.squared_errors(mu, y), name='MSE', aggregation='mean')
+
+    def model(self, x):
+        """Model is MC-estimated Student's T to ensure real standard deviations for all valid DoF"""
+        _, precision_samples = self.variational_precision(self.alpha(x), self.beta(x), leading_mc_dimension=False)
+        return monte_carlo_student_t(self.de_whiten_mean(self.mu(x)), self.de_whiten_precision(precision_samples))
+
+    def model_mean(self, x):
+        """Model mean"""
+        return self.de_whiten_mean(self.mu(x))
+
+    def model_stddev(self, x):
+        """Model standard standard deviation"""
+        return self.model(x).stddev()
+
+    def model_sample(self, x, sample_shape=()):
+        """Model sample"""
+        return self.model(x).sample(sample_shape)
 
 
 class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalVariance):
@@ -313,7 +388,12 @@ if __name__ == '__main__':
     U = np.expand_dims(np.linspace(np.min(x_eval), np.max(x_eval), 20), axis=-1)
 
     # pick the appropriate model
-    MODEL = NormalRegression if args.algorithm == 'Normal' else VariationalPrecisionNormalRegression
+    if args.algorithm == 'Normal':
+        MODEL = NormalRegression
+    elif args.algorithm == 'Student':
+        MODEL = StudentRegression
+    else:
+        MODEL = VariationalPrecisionNormalRegression
 
     # declare model instance
     mdl = MODEL(d_in=x_train.shape[1],
