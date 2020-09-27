@@ -22,7 +22,7 @@ from toy_regression import detlefsen_toy_baseline
 from experiment_regression import detlefsen_uci_baseline
 
 # results directory
-RESULTS_DIR = 'resultsV3'
+RESULTS_DIR = 'resultsV4'
 
 
 class MeanVarianceLogger(object):
@@ -83,13 +83,13 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
         # hyper-parameters
         d_hidden = 100 if dataset in {'protein', 'year'} else 50
-        f_hidden = 'relu'
-        learning_rate = 1e-4 if prior_type == 'MLE' else 1e-3
+        f_hidden = 'elu'
+        learning_rate = 1e-3
         num_mc_samples = 20
         early_stopping = True
 
         # prior parameters
-        u = x_train[np.random.choice(x_train.shape[0], 100, replace=False)]
+        u = x_train[np.random.choice(x_train.shape[0], kwargs.get('k'), replace=False)]
         a = kwargs.get('a')
         b = kwargs.get('b')
 
@@ -108,7 +108,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
         clip_value = None
     else:
         model = VariationalPrecisionNormalRegression
-        clip_value = 0.5
+        clip_value = None
 
     # declare model instance
     mdl = model(d_in=x_train.shape[1],
@@ -132,7 +132,8 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     # train the model
     callbacks = [RegressionCallback(epochs, parallel)]
     if early_stopping:
-        callbacks += [tf.keras.callbacks.EarlyStopping(monitor=model_ll, min_delta=1e-4, patience=500, mode='max')]
+        callbacks += [tf.keras.callbacks.EarlyStopping(monitor=model_ll, min_delta=1e-4, patience=50, mode='max',
+                                                       restore_best_weights=True)]
     mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=clip_value), loss=[None])
     hist = mdl.fit(ds_train, validation_data=ds_eval, epochs=epochs, verbose=0, callbacks=callbacks)
 
@@ -240,9 +241,10 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             print('\n*****', dataset, 'trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
 
         # set random number seeds
-        np.random.seed(t)
-        tf.random.set_seed(t)
-        torch.manual_seed(t)
+        seed = args.seed_init * (t + 1)
+        np.random.seed(seed)
+        tf.random.set_seed(seed)
+        torch.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
@@ -317,13 +319,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--algorithm', type=str, default='Normal', help='algorithm')
     parser.add_argument('--dataset', type=str, default='boston', help='data set name = {toy} union UCI sets')
-    parser.add_argument('--batch_iterations', type=int, default=int(20e4), help='batch iterations')
+    parser.add_argument('--batch_iterations', type=int, default=int(20e3), help='batch iterations')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--prior_type', type=str, help='prior type')
     parser.add_argument('--a', type=float, help='standard prior parameter')
     parser.add_argument('--b', type=float, help='standard prior parameter')
     parser.add_argument('--k', type=int, help='number of mixing prior components')
     parser.add_argument('--parallel', type=int, default=0, help='adjust console print out for parallel runs')
+    parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
 
     # check inputs

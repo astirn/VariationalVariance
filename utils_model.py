@@ -168,8 +168,8 @@ class VariationalVariance(object):
                 alpha = tf.expand_dims(tf.nn.softplus(self.u), axis=1)
                 beta = tf.expand_dims(tf.nn.softplus(self.v), axis=1)
 
-            # clip precision samples to avoid 0
-            p_samples = tf.clip_by_value(p_samples, clip_value_min=1e-20, clip_value_max=tf.float32.max)
+            # clip precision samples to avoid 0 which has infinite density for some parameter values
+            p_samples = tf.clip_by_value(p_samples, clip_value_min=1e-30, clip_value_max=tf.float32.max)
 
             # reshape precision samples to [batch shape, num MC samples, event shape]
             p_samples = tf.transpose(p_samples, [1, 0, 2])
@@ -177,10 +177,12 @@ class VariationalVariance(object):
             # compute prior log probabilities for each component--shape is [# components, batch size, # MC samples]
             log_pp_c = tf.vectorized_map(lambda ab: self.precision_prior(ab[0], ab[1]).log_prob(p_samples),
                                          elems=(alpha, beta))
-            log_pp_c = tf.clip_by_value(log_pp_c, clip_value_min=tf.float32.min, clip_value_max=100)
 
             # take the expectation w.r.t. to mixture proportions--shape will be [# MC samples, batch size]
-            log_pp = tf.transpose(tf.reduce_logsumexp(tf.math.log(pi) + log_pp_c, axis=0))
+            epsilon = 1e-30
+            log_pp = tf.reduce_logsumexp(tf.math.log(pi + epsilon) + log_pp_c, axis=0)  # add offset to avoid log(0)
+            log_pp -= tf.math.log(tf.reduce_sum(epsilon + pi, axis=0))  # correct for the offset
+            log_pp = tf.transpose(log_pp)
 
             # average over MC samples--shape will be [batch size]
             dkl = tf.reduce_mean(-qp.entropy() - log_pp, axis=0)
