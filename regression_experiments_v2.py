@@ -156,7 +156,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     return ll, mean_rmse, mdl_mean, mdl_std, nan_detected, mdl
 
 
-def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
+def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs):
     assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student', 'Gamma-Normal', 'LogNormal-Normal'}
     assert not (algorithm == 'Detlefsen (fixed)' and dataset != 'toy')
     assert mode in {'replace', 'resume'}
@@ -178,10 +178,10 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
     # dataset specific hyper-parameters
     n_trials = 5 if dataset in {'protein', 'year'} else 20
     batch_size = 500 if dataset == 'toy' else 256
+    batch_iterations = int(1e5) if dataset in {'carbon', 'naval', 'power plant', 'superconductivity'} else int(2e4)
 
     # establish experiment directory
     experiment_dir = 'regression_toy' if dataset == 'toy' else 'regression_uci'
-    experiment_dir += '_{:d}'.format(batch_iterations)
     os.makedirs(os.path.join(RESULTS_DIR, experiment_dir), exist_ok=True)
 
     # parse prior type hyper-parameters
@@ -272,7 +272,6 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             x_eval = x_scale.transform(x_eval)
 
         # compute epochs to correspond to the number of batch iterations (as used by Detlefsen)
-        batch_iterations = 5 * batch_iterations if x.shape[0] > 9e3 else batch_iterations
         epochs = round(batch_iterations / int(np.ceil(x_train.shape[0] / batch_size)))
 
         # run appropriate algorithm
@@ -322,7 +321,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--algorithm', type=str, default='Normal', help='algorithm')
     parser.add_argument('--dataset', type=str, default='boston', help='data set name = {toy} union UCI sets')
-    parser.add_argument('--batch_iterations', type=int, default=int(20e3), help='batch iterations')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--prior_type', type=str, help='prior type')
     parser.add_argument('--a', type=float, help='standard prior parameter')
@@ -350,4 +348,4 @@ if __name__ == '__main__':
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     # run experiments
-    run_experiments(args.algorithm, args.dataset, args.batch_iterations, args.mode, bool(args.parallel), **KWARGS)
+    run_experiments(args.algorithm, args.dataset, args.mode, bool(args.parallel), **KWARGS)
