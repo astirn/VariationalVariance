@@ -272,7 +272,8 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             x_eval = x_scale.transform(x_eval)
 
         # compute epochs to correspond to the number of batch iterations (as used by Detlefsen)
-        epochs = round(batch_iterations / int(np.ceil(x_train.shape[0] / batch_size)))
+        batch_iterations = 5 * batch_iterations if x.shape[0] > 9e3 else batch_iterations
+        epochs = round(batch_iterations * 5 / int(np.ceil(x_train.shape[0] / batch_size)))
 
         # run appropriate algorithm
         if algorithm == 'Detlefsen' and dataset == 'toy':
