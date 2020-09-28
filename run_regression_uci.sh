@@ -10,17 +10,16 @@ MODE="resume"
 N=4
 
 # dataset iterators
-#declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
-declare -a Datasets=("superconductivity" "naval" "carbon")
+declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
 
 # MLE algorithms
-declare -a MaximumLikelihoodAlgorithms=("Normal" "Student") # "Deflefsen")
+declare -a MaximumLikelihoodAlgorithms=("Normal" "Student" "Deflefsen")
 
 # Bayesian algorithms and priors
 declare -a BayesianAlgorithms=("Gamma-Normal") # "LogNormal-Normal")
 declare -a PriorTypes=("MLE" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
 
-# loop over common iterators
+# loop over datasets
 for data in "${Datasets[@]}"; do
 
   # loop over MLE algorithms
@@ -62,7 +61,6 @@ for data in "${Datasets[@]}"; do
       fi
     done
   done
-
 done
 
 # wait for all jobs to finish
