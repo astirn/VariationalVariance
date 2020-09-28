@@ -7,7 +7,7 @@ import tensorflow_probability as tfp
 import seaborn as sns
 from matplotlib import pyplot as plt
 
-from utils_model import softplus_inverse, expected_log_normal, mixture_proportions, VariationalVariance
+from utils_model import softplus_inverse, expected_log_normal, monte_carlo_student_t, VariationalVariance
 from callbacks import RegressionCallback
 from regression_data import generate_toy_data
 
@@ -100,7 +100,7 @@ class NormalRegression(LocationScaleRegression):
         self.add_metric(ll, name='LL', aggregation='mean')
         self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(self.squared_errors(mean, y), name='MSE', aggregation='mean')
+        self.add_metric(self.squared_errors(mean, y), name='Mean MSE', aggregation='mean')
 
     def model(self, x):
         """Model is simply the multi-variate normal likelihood"""
@@ -166,7 +166,7 @@ class StudentRegression(LocationScaleRegression):
         self.add_metric(ll, name='LL', aggregation='mean')
         self.add_metric(ll_de_whitened, name='LL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(self.squared_errors(mu, y), name='MSE', aggregation='mean')
+        self.add_metric(self.squared_errors(mu, y), name='Mean MSE', aggregation='mean')
 
     def model(self, x):
         """Model is MC-estimated Student's T to ensure real standard deviations for all valid DoF"""
@@ -256,7 +256,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
         self.add_metric(dkl, name='KL', aggregation='mean')
         self.add_metric(ell_de_whitened, name='ELL (de-whitened)', aggregation='mean')
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
-        self.add_metric(self.squared_errors(mu, y), name='MSE', aggregation='mean')
+        self.add_metric(self.squared_errors(mu, y), name='Mean MSE', aggregation='mean')
 
     def log_posterior_predictive_likelihood(self, y, mu, alpha, beta, p_samples):
         loc = self.de_whiten_mean(mu)

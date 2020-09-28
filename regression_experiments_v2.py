@@ -127,7 +127,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
     # relevant metric names
     model_ll = 'val_Model LL'
-    model_mse = 'val_MSE'
+    mean_mse = 'val_Mean MSE'
 
     # train the model
     callbacks = [RegressionCallback(epochs, parallel)]
@@ -147,13 +147,13 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
     # retrieve performance metrics
     ll = hist.history[model_ll][i_best]
-    rmse = np.sqrt(hist.history[model_mse][i_best])
+    mean_rmse = np.sqrt(hist.history[mean_mse][i_best])
 
-    # evaluate predictive mean and variance
+    # evaluate the model (posterior predictive if Bayesian) mean and variance
     mdl.num_mc_samples = 2000
     mdl_mean, mdl_std = mdl.model_mean(x_eval).numpy(), mdl.model_stddev(x_eval).numpy()
 
-    return ll, rmse, mdl_mean, mdl_std, nan_detected, mdl
+    return ll, mean_rmse, mdl_mean, mdl_std, nan_detected, mdl
 
 
 def run_experiments(algorithm, dataset, batch_iterations, mode='resume', parallel=False, **kwargs):
@@ -226,7 +226,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
     # otherwise, initialize the loggers
     else:
-        logger = pd.DataFrame(columns=['Algorithm', 'Prior', 'Hyper-Parameters', 'LL', 'RMSE'])
+        logger = pd.DataFrame(columns=['Algorithm', 'Prior', 'Hyper-Parameters', 'LL', 'Mean RMSE'])
         if os.path.exists(nan_file):
             os.remove(nan_file)
         if dataset == 'toy':
@@ -273,7 +273,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
         # compute epochs to correspond to the number of batch iterations (as used by Detlefsen)
         batch_iterations = 5 * batch_iterations if x.shape[0] > 9e3 else batch_iterations
-        epochs = round(batch_iterations * 5 / int(np.ceil(x_train.shape[0] / batch_size)))
+        epochs = round(batch_iterations / int(np.ceil(x_train.shape[0] / batch_size)))
 
         # run appropriate algorithm
         if algorithm == 'Detlefsen' and dataset == 'toy':
@@ -286,10 +286,12 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
             ll, rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size, parser)
 
         else:
-            ll, rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
-                                                            epochs,  batch_size, x_train, y_train, x_eval, y_eval,
-                                                            parallel, **kwargs)
-            print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials), 'LL:', ll, 'RMSE:', rmse)
+            ll, mean_rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
+                                                                 epochs,  batch_size,
+                                                                 x_train, y_train, x_eval, y_eval,
+                                                                 parallel, **kwargs)
+            print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials),
+                  'LL:', ll, 'Mean RMSE:', mean_rmse)
             if nans:
                 print('**** NaN Detected ****')
                 print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
@@ -305,7 +307,7 @@ def run_experiments(algorithm, dataset, batch_iterations, mode='resume', paralle
 
         # save results
         new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'Hyper-Parameters': hyper_params,
-                               'LL': ll, 'RMSE': rmse}, index=[t])
+                               'LL': ll, 'Mean RMSE': mean_rmse}, index=[t])
         logger = logger.append(new_df)
         logger.to_pickle(logger_file)
         if dataset == 'toy':

@@ -662,7 +662,7 @@ def john(args, X, y, Xval, yval):
                 model.train()
 
                 # early stop check
-                if len(ll_list) - np.argmax(ll_list) > 500:
+                if len(ll_list) - np.argmax(ll_list) > 50:
                     it = args.iters
                     print('Early Stop!')
 
