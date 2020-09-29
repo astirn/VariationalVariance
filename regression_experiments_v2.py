@@ -1,5 +1,6 @@
 import os
 import sys
+import copy
 import torch
 import pickle
 import argparse
@@ -278,13 +279,13 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
 
         # run appropriate algorithm
         if algorithm == 'Detlefsen' and dataset == 'toy':
-            ll, rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=False)
+            ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=False)
 
         elif algorithm == 'Detlefsen (fixed)' and dataset == 'toy':
-            ll, rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=True)
+            ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=True)
 
         elif algorithm == 'Detlefsen' and dataset != 'toy':
-            ll, rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size, parser)
+            ll, mean_rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size, copy.deepcopy(parser))
 
         else:
             ll, mean_rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
