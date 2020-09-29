@@ -102,30 +102,51 @@ class NormalRegression(LocationScaleRegression):
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
         self.add_metric(self.squared_errors(mean, y), name='Mean MSE', aggregation='mean')
 
-    def model(self, x):
-        """Model is simply the multi-variate normal likelihood"""
-        return tfp.distributions.MultivariateNormalDiag(self.model_mean(x), self.model_stddev(x))
+    def predictive_moments_and_samples(self, x):
+        """Predictive model is the multivariate normal employed during MLE but with rescaled parameters"""
+        n_dist = tfp.distributions.MultivariateNormalDiag(loc=self.de_whiten_mean(self.mean(x)),
+                                                          scale_diag=self.de_whiten_stddev(self.precision(x) ** -0.5))
+        return n_dist.mean().numpy(), n_dist.stddev().numpy(), n_dist.sample().numpy()
 
-    def model_mean(self, x):
-        """Model mean is simply the mean network's output trained using maximum likelihood"""
-        return self.de_whiten_mean(self.mean(x))
 
-    def model_stddev(self, x):
-        """Model standard dev. is simply the transformed precision network's output trained using maximum likelihood"""
-        return self.de_whiten_stddev(self.precision(x) ** -0.5)
+class PredictiveStudent(LocationScaleRegression):
+    def __init__(self, y_mean, y_var):
+        super(PredictiveStudent, self).__init__(y_mean, y_var)
 
-    def model_sample(self, x, sample_shape=()):
-        """Model sample"""
-        return self.model(x).sample(sample_shape)
+    def predictive_moments_and_samples(self, x):
+        """Posterior predictive is Student's T but with rescaled parameters"""
 
+        # establish distribution
+        alpha = self.alpha(x)
+        loc = self.de_whiten_mean(self.mu(x))
+        scale = self.de_whiten_stddev(tf.sqrt(self.beta(x) / alpha))
+        t_dist = tfp.distributions.StudentT(df=2 * alpha, loc=loc, scale=scale)
+        t_dist = tfp.distributions.Independent(t_dist, reinterpreted_batch_ndims=1)
+
+        # compute approximate moments
+        samples_f64 = tf.cast(t_dist.sample(self.num_mc_samples), tf.float64)
+        mean_approx = tf.cast(tf.reduce_mean(samples_f64, axis=0), tf.float32)
+        stddev_approx = tf.cast(tf.math.reduce_std(samples_f64, axis=0), tf.float32)
+
+        # take analytic moments where possible
+        mean = tf.where(tf.greater(alpha, 0.5), t_dist.mean(), mean_approx)
+        stddev = tf.where(tf.greater(alpha, 1.0), t_dist.stddev(), stddev_approx)
+
+        return mean.numpy(), stddev.numpy(), t_dist.sample().numpy()
 
 class StudentRegression(LocationScaleRegression):
 
-    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, **kwargs):
+class StudentRegression(PredictiveStudent):
+
+    def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, num_mc_samples, **kwargs):
         super(StudentRegression, self).__init__(y_mean, y_var)
         assert isinstance(d_in, int) and d_in > 0
         assert isinstance(d_hidden, int) and d_hidden > 0
         assert isinstance(d_out, int) and d_out > 0
+        assert isinstance(num_mc_samples, int) and num_mc_samples > 0
+
+        # save configuration
+        self.num_mc_samples = num_mc_samples
 
         # build parameter networks
         self.mu = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
@@ -168,28 +189,11 @@ class StudentRegression(LocationScaleRegression):
         self.add_metric(ll_model, name='Model LL', aggregation='mean')
         self.add_metric(self.squared_errors(mu, y), name='Mean MSE', aggregation='mean')
 
-    def model(self, x):
-        """Model is MC-estimated Student's T to ensure real standard deviations for all valid DoF"""
-        _, precision_samples = self.variational_precision(self.alpha(x), self.beta(x), leading_mc_dimension=False)
-        return monte_carlo_student_t(self.de_whiten_mean(self.mu(x)), self.de_whiten_precision(precision_samples))
 
-    def model_mean(self, x):
-        """Model mean"""
-        return self.de_whiten_mean(self.mu(x))
-
-    def model_stddev(self, x):
-        """Model standard standard deviation"""
-        return self.model(x).stddev()
-
-    def model_sample(self, x, sample_shape=()):
-        """Model sample"""
-        return self.model(x).sample(sample_shape)
-
-
-class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalVariance):
+class VariationalPrecisionNormalRegression(PredictiveStudent, VariationalVariance):
 
     def __init__(self, d_in, d_hidden, f_hidden, d_out, y_mean, y_var, prior_type, prior_fam, num_mc_samples, **kwargs):
-        LocationScaleRegression.__init__(self, y_mean, y_var)
+        PredictiveStudent.__init__(self, y_mean, y_var)
         VariationalVariance.__init__(self, d_out, prior_type, prior_fam, **kwargs)
         assert isinstance(d_in, int) and d_in > 0
         assert isinstance(d_hidden, int) and d_hidden > 0
@@ -264,26 +268,7 @@ class VariationalPrecisionNormalRegression(LocationScaleRegression, VariationalV
             py_x = tfp.distributions.StudentT(df=2 * alpha, loc=loc, scale=self.de_whiten_stddev(tf.sqrt(beta / alpha)))
             return tfp.distributions.Independent(py_x, reinterpreted_batch_ndims=1).log_prob(y)
         elif self.prior_fam == 'LogNormal':
-            components = []
-            for p in tf.unstack(p_samples):
-                p = tfp.distributions.Normal(loc=loc, scale=self.de_whiten_stddev(p ** -0.5))
-                components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
-            py_x = tfp.distributions.Mixture(cat=mixture_proportions(p_samples), components=components)
-            return py_x.log_prob(y)
-
-    def model_mean(self, x):
-        """Model mean is simply the mean network's output as it is not latent during variational inference"""
-        return self.mu(x) * self.y_std + self.y_mean
-
-    def model_stddev(self, x):
-        """Model standard dev. is the expected value under precision's variational posterior"""
-        if self.prior_fam == 'Gamma':
-            # Monte-Carlo estimate since analytic solution is only valid for alpha > 0.5
-            # analytic expected standard deviation = Gamma(alpha - 0.5) / Gamma(alpha) / sqrt(beta)
-            _, p_samples = self.variational_precision(self.alpha(x), self.beta(x), leading_mc_dimension=False)
-            return tf.reduce_mean(p_samples ** -0.5, axis=0)
-        elif self.prior_fam == 'LogNormal':
-            return tf.exp(self.beta(x) ** 2 / 8 - self.alpha(x) / 2)
+            return monte_carlo_student_t(loc, self.de_whiten_precision(p_samples)).log_prob(y)
 
 
 def prior_params(precisions, prior_fam):
@@ -374,7 +359,6 @@ if __name__ == '__main__':
     PRIOR_FAM = 'Gamma' if 'Gamma' in args.algorithm else 'LogNormal'
     N_MC_SAMPLES = 50
     LEARNING_RATE = 1e-2
-    CLIP_VALUE = None if args.algorithm == 'Normal' else 0.5
     EPOCHS = int(6e3)
 
     # load data
@@ -411,15 +395,15 @@ if __name__ == '__main__':
                 u=U)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
-    optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE, clipvalue=CLIP_VALUE)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=LEARNING_RATE)
     mdl.compile(optimizer=optimizer, loss=[None], run_eagerly=False)
 
     # train model
     hist = mdl.fit(ds_train, epochs=EPOCHS, verbose=0, callbacks=[RegressionCallback(EPOCHS)])
 
-    # evaluate model with increased Monte-Carlo samples
+    # evaluate predictive model with increased Monte-Carlo samples (if sampling is used by the particular model)
     mdl.num_mc_samples = 2000
-    mdl_mean, mdl_std = mdl.model_mean(x_eval), mdl.model_stddev(x_eval)
+    mdl_mean, mdl_std, mdl_samples = mdl.predictive_moments_and_samples(x_eval)
 
     # plot results for toy data
     fig = plt.figure()

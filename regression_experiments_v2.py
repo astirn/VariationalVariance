@@ -102,13 +102,10 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     # pick appropriate model and gradient clip value
     if algorithm == 'Normal':
         model = NormalRegression
-        clip_value = None
     elif algorithm == 'Student':
         model = StudentRegression
-        clip_value = None
     else:
         model = VariationalPrecisionNormalRegression
-        clip_value = None
 
     # declare model instance
     mdl = model(d_in=x_train.shape[1],
@@ -134,7 +131,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     if early_stopping:
         callbacks += [tf.keras.callbacks.EarlyStopping(monitor=model_ll, min_delta=1e-4, patience=50, mode='max',
                                                        restore_best_weights=True)]
-    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate, clipvalue=clip_value), loss=[None])
+    mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate), loss=[None])
     hist = mdl.fit(ds_train, validation_data=ds_eval, epochs=epochs, verbose=0, callbacks=callbacks)
 
     # test for NaN's
@@ -149,9 +146,9 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     ll = hist.history[model_ll][i_best]
     mean_rmse = np.sqrt(hist.history[mean_mse][i_best])
 
-    # evaluate the model (posterior predictive if Bayesian) mean and variance
+    # evaluate predictive model with increased Monte-Carlo samples (if sampling is used by the particular model)
     mdl.num_mc_samples = 2000
-    mdl_mean, mdl_std = mdl.model_mean(x_eval).numpy(), mdl.model_stddev(x_eval).numpy()
+    mdl_mean, mdl_std, mdl_samples = mdl.predictive_moments_and_samples(x_eval)
 
     return ll, mean_rmse, mdl_mean, mdl_std, nan_detected, mdl
 
