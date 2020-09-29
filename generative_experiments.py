@@ -16,7 +16,7 @@ METHODS = [
     # Fixed Variance VAE baselines
     {'name': 'Fixed-Var. VAE (1.0)', 'mdl': FixedVarianceNormalVAE,
      'kwargs': {'variance': 1.0}},
-    {'name': 'Fixed-Var. VAE (1e-3)', 'mdl': FixedVarianceNormalVAE,
+    {'name': 'Fixed-Var. VAE (0.001)', 'mdl': FixedVarianceNormalVAE,
      'kwargs': {'variance': 1e-3}},
     # VAE with single decoder network both w/ and w/o batch normalization
     {'name': 'VAE', 'mdl': NormalVAE,
@@ -28,13 +28,16 @@ METHODS = [
      'kwargs': {'split_decoder': True, 'batch_norm': False}},
     {'name': 'VAE-Split + BN', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
+    # Detlefsen Baseline
+    # TODO: implement this!
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True,  'b': 1e-3}},
-    {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
-     'kwargs': {'min_dof': 0}},
-    {'name': 'Student-VAE: $\\nu > 3$', 'mdl': StudentVAE,
-     'kwargs': {'min_dof': 3}},
+    # TODO: ensure no NaNs
+    # {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
+    #  'kwargs': {'min_dof': 0}},
+    # {'name': 'Student-VAE: $\\nu > 3$', 'mdl': StudentVAE,
+    #  'kwargs': {'min_dof': 3}},
     # Our Methods
     # TODO: define these!
     # {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'mle'}},
@@ -82,7 +85,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
 
     # common configurations
     batch_size = 250
-    epochs = 10
+    epochs = 1000
 
     # load data
     train_set, test_set, info = load_data_set(data_set_name=dataset, px_family='Normal', batch_size=batch_size)
@@ -112,8 +115,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
         # update kwargs accordingly
         kwargs = copy.deepcopy(method['kwargs'])
         kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
-                       'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES,
-                       'u': u, 'latex_metrics': False})
+                       'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
 
         # configure and compile
         mdl = method['mdl'](**kwargs)
@@ -187,8 +189,8 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='mnist', help='https://www.tensorflow.org/datasets/catalog/overview')
-    parser.add_argument('--num_trials', type=int, default=2, help='number of trials')
+    parser.add_argument('--dataset', type=str, default='mnist', help='www.tensorflow.org/datasets/catalog/overview')
+    parser.add_argument('--num_trials', type=int, default=1, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
@@ -201,5 +203,5 @@ if __name__ == '__main__':
     os.makedirs(RESULTS_DIR, exist_ok=True)
 
     # run experiments accordingly
-    for method in METHODS:
-        run_vae_experiments(method=method, dataset=args.dataset, num_trials=args.num_trials, mode=args.mode)
+    for m in METHODS:
+        run_vae_experiments(method=m, dataset=args.dataset, num_trials=args.num_trials, mode=args.mode)
