@@ -18,30 +18,40 @@ METHODS = [
      'kwargs': {'variance': 1.0}},
     {'name': 'Fixed-Var. VAE (0.001)', 'mdl': FixedVarianceNormalVAE,
      'kwargs': {'variance': 1e-3}},
+
     # VAE with single decoder network both w/ and w/o batch normalization
     {'name': 'VAE', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': False, 'batch_norm': False}},
     {'name': 'VAE + BN', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': False, 'batch_norm': True}},
+
     # VAE with split decoder networks both w/ and w/o batch normalization
     {'name': 'VAE-Split', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True, 'batch_norm': False}},
     {'name': 'VAE-Split + BN', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
+
     # Detlefsen Baseline
     # TODO: implement this!
+
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True,  'b': 1e-3}},
-    # TODO: ensure no NaNs
-    # {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
-    #  'kwargs': {'min_dof': 0}},
+    # TODO: ensure no NaNs for 0 < DoF <= 2
+    # # {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
+    # #  'kwargs': {'min_dof': 0}},
     # {'name': 'Student-VAE: $\\nu > 3$', 'mdl': StudentVAE,
     #  'kwargs': {'min_dof': 3}},
+
     # Our Methods
-    # TODO: define these!
-    # {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'mle'}},
-    # {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'standard', 'a': 1.0, 'b': 1e-3}},
+    # TODO: ensure no NaNs for 0 < DoF <= 2
+    # {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE,
+    #  'kwargs': {'prior': 'mle'}},
+    # {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
+    #  'kwargs': {'min_dof': 0, 'prior_type': 'Standard', 'a': 1.0, 'b': 1e-3}},
+    # TODO: define more of these!
+    # {'name': 'V3AE-xVAMP*', 'mdl': VariationalVarianceVAE,
+    #  'kwargs': {'min_dof': 0, 'prior_type': 'xVAMP*'}},
 ]
 
 # latent dimension per data set
