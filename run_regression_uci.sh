@@ -13,7 +13,7 @@ N=4
 declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
 
 # MLE algorithms
-declare -a MaximumLikelihoodAlgorithms=("Normal" "Student" "Deflefsen")
+declare -a MaximumLikelihoodAlgorithms=("Normal" "Student" "Detlefsen")
 
 # Bayesian algorithms and priors
 declare -a BayesianAlgorithms=("Gamma-Normal") # "LogNormal-Normal")
