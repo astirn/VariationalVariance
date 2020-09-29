@@ -134,7 +134,6 @@ class PredictiveStudent(LocationScaleRegression):
 
         return mean.numpy(), stddev.numpy(), t_dist.sample().numpy()
 
-class StudentRegression(LocationScaleRegression):
 
 class StudentRegression(PredictiveStudent):
 
