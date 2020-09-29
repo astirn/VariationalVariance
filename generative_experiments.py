@@ -1,5 +1,5 @@
 import os
-import sys
+import copy
 import pickle
 import argparse
 import numpy as np
@@ -7,79 +7,89 @@ import pandas as pd
 import torch as torch
 import tensorflow as tf
 
+from utils_analysis import RESULTS_DIR
 from generative_data import load_data_set
-from generative_models import NormalVAE, StudentVAE, VariationalVarianceVAE, precision_prior_params
-
-# import Detlefsen baseline model
-sys.path.append(os.path.join(os.getcwd(), 'john-master'))
-from experiment_vae import detlefsen_vae_baseline
-
+from generative_models import FixedVarianceNormalVAE, NormalVAE, StudentVAE, VariationalVarianceVAE, precision_prior_params
 
 # dictionary of methods to test
 METHODS = [
-    {'Method': 'VAE', 'mdl': NormalVAE, 'kwargs': {'split_decoder': False}},
-    {'Method': 'VAE-Split', 'mdl': NormalVAE, 'kwargs': {'split_decoder': True}},
-    {'Method': 'MAP-VAE', 'mdl': NormalVAE, 'kwargs': {'split_decoder': True, 'b': 1e-3}},
-    {'Method': 'Student-VAE', 'mdl': StudentVAE, 'kwargs': dict()},
-    {'Method': 'EB-MAP-VAE', 'mdl': NormalVAE, 'kwargs': {'split_decoder': True}},
-    {'Method': 'V3AE-Uniform', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'mle'}},
-    {'Method': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'standard', 'a': 1.0, 'b': 1e-3}},
-    {'Method': 'EB-V3AE-Gamma', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'standard'}},
-    {'Method': 'V3AE-VAMP', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'vamp', 'a': 1.0, 'b': 1e-3}},
-    {'Method': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'vbem', 'a': 1.0, 'b': 1e-3, 'k': 10}},
+    # Fixed Variance VAE baselines
+    {'name': 'Fixed-Var. VAE (1.0)', 'mdl': FixedVarianceNormalVAE,
+     'kwargs': {'variance': 1.0}},
+    {'name': 'Fixed-Var. VAE (1e-3)', 'mdl': FixedVarianceNormalVAE,
+     'kwargs': {'variance': 1e-3}},
+    # VAE with single decoder network both w/ and w/o batch normalization
+    {'name': 'VAE', 'mdl': NormalVAE,
+     'kwargs': {'split_decoder': False, 'batch_norm': False}},
+    {'name': 'VAE + BN', 'mdl': NormalVAE,
+     'kwargs': {'split_decoder': False, 'batch_norm': True}},
+    # VAE with split decoder networks both w/ and w/o batch normalization
+    {'name': 'VAE-Split', 'mdl': NormalVAE,
+     'kwargs': {'split_decoder': True, 'batch_norm': False}},
+    {'name': 'VAE-Split + BN', 'mdl': NormalVAE,
+     'kwargs': {'split_decoder': True, 'batch_norm': True}},
+    # Takahashi baselines
+    {'name': 'MAP-VAE', 'mdl': NormalVAE,
+     'kwargs': {'split_decoder': True,  'b': 1e-3}},
+    {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
+     'kwargs': {'min_dof': 0}},
+    {'name': 'Student-VAE: $\\nu > 3$', 'mdl': StudentVAE,
+     'kwargs': {'min_dof': 3}},
+    # Our Methods
+    # TODO: define these!
+    # {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'mle'}},
+    # {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE, 'kwargs': {'prior': 'standard', 'a': 1.0, 'b': 1e-3}},
 ]
 
 # latent dimension per data set
 DIM_Z = {'mnist': 10, 'fashion_mnist': 25, 'svhn_cropped': 50}
 ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'convolution'}
-BATCH_NORM = {'mnist': [False, True], 'fashion_mnist': [False, True], 'svhn_cropped': [False]}
+NUM_MC_SAMPLES = 20
 
 
-def run_vae_experiments(data_set_name, resume, augment):
-    assert data_set_name in DIM_Z.keys()
-    assert isinstance(resume, bool)
-    assert isinstance(augment, bool)
-    assert not (resume and augment)
+def run_vae_experiments(method, dataset, num_trials, mode):
 
-    # load results if we are append mode and they exist
-    results = os.path.join('results', 'generative_' + data_set_name + '_metrics.pkl')
-    plots = os.path.join('results', 'generative_' + data_set_name + '_plots.pkl')
-    if (resume or augment) and os.path.exists(results) and os.path.exists(plots):
-        logger = pd.read_pickle(results)
-        with open(plots, 'rb') as f:
+    # establish experiment directory
+    experiment_dir = 'vae'
+    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir), exist_ok=True)
+
+    # make sure results subdirectory exists
+    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir, dataset), exist_ok=True)
+
+    # create full file names
+    logger_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_metrics.pkl')
+    plotter_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_plots.pkl')
+    nan_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_nan_log.txt')
+
+    # load results if we are resuming
+    if mode == 'resume' and os.path.exists(logger_file) and os.path.exists(plotter_file):
+        logger = pd.read_pickle(logger_file)
+        with open(plotter_file, 'rb') as f:
             plotter = pickle.load(f)
-        if resume:
-            t_start = max(logger.index)
-            methods = METHODS
-            print('Resuming at trial {:d}'.format(t_start + 2))
-        else:
-            t_start = -1
-            methods = [m for m in METHODS if m['Method'] not in logger.Method.unique()]
-            for m in methods:
-                plotter.update({m['Method']: [{'learning': [], 'reconstruction': []},
-                                              {'learning': [], 'reconstruction': []}]})
-            print('Augmenting missing methods: ' + ', '.join([m['Method'] for m in methods]))
+        t_start = max(logger.index)
+        print('Resuming', dataset, method['name'], 'at trial {:d}'.format(t_start + 2))
 
-    # otherwise, initialize the logger
+    # otherwise, initialize the loggers
     else:
-        logger = pd.DataFrame(columns=['Method', 'BatchNorm', 'LL', 'RMSE', 'Entropy'])
-        plotter = {'x': None}
-        for m in METHODS:
-            plotter.update({m['Method']: [{'learning': [], 'reconstruction': []},
-                                          {'learning': [], 'reconstruction': []}]})
+        logger = pd.DataFrame(columns=['Method', 'LL', 'Best Epoch',
+                                       'Mean Bias', 'Mean RMSE',
+                                       'Var Bias', 'Var RMSE',
+                                       'Sample Bias', 'Sample RMSE'])
+        plotter = {'x': None, 'training': [], 'reconstruction': []}
+        if os.path.exists(nan_file):
+            os.remove(nan_file)
         t_start = -1
-        methods = METHODS
 
     # common configurations
-    n_trials = 5
     batch_size = 250
-    epochs = 1000
+    epochs = 10
 
     # load data
-    train_set, test_set, info = load_data_set(data_set_name=data_set_name, px_family='Normal', batch_size=batch_size)
+    train_set, test_set, info = load_data_set(data_set_name=dataset, px_family='Normal', batch_size=batch_size)
 
     # loop over the trials
-    for t in range(t_start + 1, n_trials):
+    for t in range(t_start + 1, num_trials):
+        print('\n***** Trial {:d}/{:d}:'.format(t + 1, num_trials), method['name'], '*****')
 
         # set random number seeds
         np.random.seed(t)
@@ -99,91 +109,97 @@ def run_vae_experiments(data_set_name, resume, augment):
                                                   num_classes=info.features['label'].num_classes,
                                                   pseudo_inputs_per_class=10)[-1]
 
-        # run Detlefsen baseline
-        x_train = np.concatenate([x['image'] for x in train_set.as_numpy_iterator()], axis=0)
-        x_test = np.concatenate([x['image'] for x in test_set.as_numpy_iterator()], axis=0)
-        # ll, rmse, h, x_mean, x_std, x_new = detlefsen_vae_baseline(x_train, x_test, plotter['x'],
-        #                                                            DIM_Z[data_set_name], epochs, batch_size)
+        # update kwargs accordingly
+        kwargs = copy.deepcopy(method['kwargs'])
+        kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
+                       'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES,
+                       'u': u, 'latex_metrics': False})
 
-        # loop over the configurations
-        for m in methods:
-            for batch_norm in BATCH_NORM[data_set_name]:
-                status = '(batch norm)' if batch_norm else ''
-                print('\n***** Trial {:d}/{:d}:'.format(t + 1, n_trials), m['Method'], status, '*****')
+        # configure and compile
+        mdl = method['mdl'](**kwargs)
+        mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5), loss=[None])
 
-                # update kwargs accordingly
-                kwargs = m['kwargs']
-                kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[data_set_name],
-                               'architecture': ARCHITECTURE[data_set_name], 'batch_norm': batch_norm,
-                               'latex_metrics': False})
-                if 'EB-' in m['Method']:
-                    kwargs.update({'a': a, 'b': b})
-                if 'VAMP' in m['Method']:
-                    kwargs.update({'u': u})
+        # train
+        hist = mdl.fit(train_set, validation_data=test_set, epochs=epochs, verbose=1,
+                       validation_steps=np.ceil(info.splits['test'].num_examples // batch_size),
+                       callbacks=[tf.keras.callbacks.TerminateOnNaN(),
+                                  tf.keras.callbacks.EarlyStopping(monitor='val_LPPL',
+                                                                   patience=50,
+                                                                   mode='max',
+                                                                   restore_best_weights=True)])
+        # print and log NaNs
+        if sum(np.isnan(hist.history['loss'])):
+            print('**** NaN Detected ****')
+            print(dataset, method['name'], 'trial = {:d}'.format(t + 1), file=open(nan_file, 'a'))
 
-                # configure and compile
-                mdl = m['mdl'](**kwargs)
-                mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4), loss=[None])
+        # retrieve best attained posterior predictive log likelihood on the validation data
+        i_best = np.argmax(hist.history['val_LPPL'])
+        lppl = hist.history['val_LPPL'][i_best]
 
-                # train
-                hist = mdl.fit(train_set, validation_data=test_set, epochs=epochs, verbose=1,
-                               validation_steps=np.ceil(info.splits['test'].num_examples // batch_size),
-                               callbacks=[tf.keras.callbacks.TerminateOnNaN(),
-                                          tf.keras.callbacks.EarlyStopping(monitor='val_LL',
-                                                                           patience=50,
-                                                                           mode='max',
-                                                                           restore_best_weights=True)])
+        # log scalar performance metrics
+        num_pixels = 0
+        mean_bias = 0
+        mean_mse = 0
+        var_bias = 0
+        var_mse = 0
+        sample_bias = 0
+        sample_mse = 0
+        for batch in test_set:
+            x_mean, x_std, x_new = mdl.posterior_predictive_checks(batch['image'])
+            num_pixels += np.prod(batch['image'].shape)
+            mean_residuals = x_mean - batch['image']
+            mean_bias += tf.reduce_sum(mean_residuals)
+            mean_mse += tf.reduce_sum(mean_residuals ** 2)
+            var_residuals = x_std ** 2 - mean_residuals ** 2
+            var_bias += tf.reduce_sum(var_residuals)
+            var_mse += tf.reduce_sum(var_residuals ** 2)
+            sample_residuals = x_new - batch['image']
+            sample_bias += tf.reduce_sum(sample_residuals)
+            sample_mse += tf.reduce_sum(sample_residuals ** 2)
+        mean_bias /= num_pixels
+        mean_mse /= num_pixels
+        var_bias /= num_pixels
+        var_mse /= num_pixels
+        sample_bias /= num_pixels
+        sample_mse /= num_pixels
 
-                # log scalar metrics
-                ll = []
-                x_new = []
-                h = []
-                for i in range(int(np.ceil(x_test.shape[0] / batch_size))):
-                    i_start = i * batch_size
-                    i_end = min((i + 1) * batch_size, x_test.shape[0])
-                    ll.append(mdl.variational_objective(x_test[i_start:i_end])[1])
-                    _, _, x_new_batch, h_batch = mdl.posterior_predictive(x=x_test[i_start:i_end])
-                    x_new.append(x_new_batch)
-                    h.append(h_batch)
-                ll = np.mean(tf.concat(ll, axis=0))
-                rmse = np.sqrt(np.mean((tf.concat(x_new, axis=0) - x_test) ** 2))
-                h = np.mean(tf.concat(h, axis=0))
-            print('LL = {:.2f}, RMSE = {:.4f}, H = {:.2f}'.format(ll, rmse, h))
+        # log/print scalar metrics
+        new_df = pd.DataFrame(data={'Method': method['name'], 'LL': lppl, 'Best Epoch': i_best + 1,
+                                    'Mean Bias': mean_bias.numpy(), 'Mean RMSE': mean_mse.numpy() ** 0.5,
+                                    'Var Bias': var_bias.numpy(), 'Var RMSE': var_mse.numpy() ** 0.5,
+                                    'Sample Bias': sample_bias.numpy(), 'Sample RMSE': sample_mse.numpy() ** 0.5},
+                              index=[t])
+        logger = logger.append(new_df)
+        print(new_df.to_string())
 
-            # get plot data
-            x_mean, x_std, x_new, _ = mdl.posterior_predictive(x=plotter['x'])
-
-            # update results
-            new_df = pd.DataFrame({'Method': m['Method'], 'BatchNorm': batch_norm,
-                                   'LL': ll, 'RMSE': rmse, 'Entropy': h}, index=[t])
-            logger = logger.append(new_df)
-            plotter[m['Method']][batch_norm]['learning'].append(hist.history)
-            plotter[m['Method']][batch_norm]['reconstruction'].append({'mean': x_mean, 'std': x_std, 'sample': x_new})
+        # save plot data
+        x_mean, x_std, x_new = mdl.posterior_predictive_checks(x=plotter['x'])
+        plotter['training'].append(hist.history)
+        plotter['reconstruction'].append({'mean': x_mean, 'std': x_std, 'sample': x_new})
 
         # save results after each trial
-        logger.to_pickle(results)
-        with open(plots, 'wb') as f:
+        logger.to_pickle(logger_file)
+        with open(plotter_file, 'wb') as f:
             pickle.dump(plotter, f)
-
-    print('\nDone!')
 
 
 if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='mnist', help='https://www.tensorflow.org/datasets/catalog/overview')
-    parser.add_argument('--resume', type=int, default=0, help='resumes where we left off')
-    parser.add_argument('--augment', type=int, default=0, help='adds missing methods to results')
+    parser.add_argument('--dataset', type=str, default='mnist', help='https://www.tensorflow.org/datasets/catalog/overview')
+    parser.add_argument('--num_trials', type=int, default=2, help='number of trials')
+    parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
+    parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
 
     # check inputs
-    assert isinstance(args.resume, int)
-    assert isinstance(args.augment, int)
+    assert args.dataset in DIM_Z.keys()
+    assert args.mode in {'replace', 'resume'}
 
     # make result directory if it doesn't already exist
-    if not os.path.exists('results'):
-        os.makedirs('results')
+    os.makedirs(RESULTS_DIR, exist_ok=True)
 
     # run experiments accordingly
-    run_vae_experiments(data_set_name=args.data, resume=bool(args.resume), augment=bool(args.augment))
+    for method in METHODS:
+        run_vae_experiments(method=method, dataset=args.dataset, num_trials=args.num_trials, mode=args.mode)

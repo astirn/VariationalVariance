@@ -14,8 +14,6 @@ for gpu in tf.config.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(gpu, enable=True)
 tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
 
-EPSILON = 1e-6
-
 
 def encoder_dense(dim_in, dim_out, batch_norm, name):
     enc = tf.keras.Sequential(name=name)
@@ -211,19 +209,13 @@ class VAE(tf.keras.Model):
 
         # log posterior predictive heuristics
         self.add_metric(self.posterior_predictive(*params).log_prob(x), name='LPPL', aggregation='mean')
-        # if not kwargs.get('training'): TODO: move this to experiments
-        #     x_mean, _, x_new = self.posterior_predictive_moments_and_samples(params)
-        #     rmse_mean = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_mean)), axis=-1))
-        #     rmse_sample = tf.sqrt(tf.reduce_mean(tf.math.squared_difference(x, self.flatten(x_new)), axis=-1))
-        #     self.add_metric(rmse_mean, name='RMSE(mean)', aggregation='mean')
-        #     self.add_metric(rmse_sample, name='RMSE(sample)', aggregation='mean')
 
         return tf.constant(0.0, dtype=tf.float32)
 
 
 class FixedVarianceNormalVAE(VAE):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, variance, num_mc_samples):
+    def __init__(self, dim_x, dim_z, architecture, variance, num_mc_samples, batch_norm=False, **kwargs):
         super(FixedVarianceNormalVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
         assert variance > 0
 
@@ -284,16 +276,16 @@ class FixedVarianceNormalVAE(VAE):
 
 class NormalVAE(VAE):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, split_decoder, num_mc_samples, grad_adjust='None', **kwargs):
+    def __init__(self, dim_x, dim_z, architecture, split_decoder, num_mc_samples, batch_norm=False, **kwargs):
         super(NormalVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
         assert isinstance(split_decoder, bool)
-        assert grad_adjust in {'None', 'Normalized', 'Fixed'}
+        # assert grad_adjust in {'None', 'Normalized', 'Fixed'}
         assert isinstance(kwargs.get('a'), (type(None), float))
         assert isinstance(kwargs.get('b'), (type(None), float))
 
         # save configuration
         self.split_decoder = split_decoder
-        self.grad_adjust = grad_adjust
+        self.grad_adjust = 'None'
         self.a = None if kwargs.get('a') is None else tf.constant(kwargs.get('a'), dtype=tf.float32)
         self.b = None if kwargs.get('b') is None else tf.constant(kwargs.get('b'), dtype=tf.float32)
 
@@ -379,7 +371,7 @@ class NormalVAE(VAE):
 
 class StudentVAE(VAE):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, num_mc_samples):
+    def __init__(self, dim_x, dim_z, architecture, min_dof, num_mc_samples, batch_norm=False, **kwargs):
         super(StudentVAE, self).__init__(dim_x, dim_z, architecture, batch_norm, num_mc_samples)
         assert min_dof >= 0
 
@@ -444,9 +436,9 @@ class StudentVAE(VAE):
 
 class VariationalVarianceVAE(VAE, VariationalVariance):
 
-    def __init__(self, dim_x, dim_z, architecture, batch_norm, min_dof, prior_type, num_mc_samples, **kwargs):
+    def __init__(self, dim_x, dim_z, architecture, min_dof, prior_type, num_mc_samples, batch_norm=False, **kwargs):
         VAE.__init__(self, dim_x, dim_z, architecture, batch_norm, num_mc_samples)
-        VariationalVariance.__init__(self, int(np.prod(dim_x)), prior_type, prior_fam='Gamma', **kwargs) # TODO: add LogNormal to VAE
+        VariationalVariance.__init__(self, int(np.prod(dim_x)), prior_type, prior_fam='Gamma', **kwargs)
         assert min_dof >= 0
         assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
 
@@ -510,7 +502,7 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
     def posterior_predictive(self, mu, alpha, beta):
         components = []
         for m, a, b in zip(tf.unstack(mu), tf.unstack(alpha), tf.unstack(beta)):
-            p = tfp.distributions.StudentT(df=2 * a, loc=m, scale=tf.sqrt(b / a))
+            p = tfp.distributions.StudentT(df=2 * a + self.min_dof, loc=m, scale=tf.sqrt(b / a))
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
         return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
@@ -538,9 +530,9 @@ if __name__ == '__main__':
     # vae = FixedVarianceNormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
     #                              num_mc_samples=NUM_MC_SAMPLES, variance=1)
 
-    # # VAE with shared mean/variance decoder network
-    # vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                 num_mc_samples=NUM_MC_SAMPLES, split_decoder=False)
+    # VAE with shared mean/variance decoder network
+    vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+                    num_mc_samples=NUM_MC_SAMPLES, split_decoder=False)
 
     # # VAE with split mean/variance decoder network
     # vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
@@ -578,9 +570,9 @@ if __name__ == '__main__':
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
     #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM')
 
-    # Variational Variance VAE (ours) + VBEM* prior
-    vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-                                 num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=100)
+    # # Variational Variance VAE (ours) + VBEM* prior
+    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=100)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
     vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4), loss=[None], run_eagerly=False)
