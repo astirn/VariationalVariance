@@ -10,20 +10,15 @@ import pandas as pd
 import sklearn as skl
 import tensorflow as tf
 
-# import data loaders and callbacks
+from utils_analysis import RESULTS_DIR
 from regression_data import generate_toy_data
 from callbacks import RegressionCallback
-
-# import our regression models
 from regression_models import prior_params, NormalRegression, StudentRegression, VariationalPrecisionNormalRegression
 
 # import Detlefsen baseline model
 sys.path.append(os.path.join(os.getcwd(), 'john-master'))
 from toy_regression import detlefsen_toy_baseline
 from experiment_regression import detlefsen_uci_baseline
-
-# results directory
-RESULTS_DIR = 'resultsV4'
 
 
 class MeanVarianceLogger(object):
@@ -278,6 +273,7 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
         epochs = round(batch_iterations / int(np.ceil(x_train.shape[0] / batch_size)))
 
         # run appropriate algorithm
+        nans = False
         if algorithm == 'Detlefsen' and dataset == 'toy':
             ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=False)
 
@@ -292,11 +288,6 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
                                                                  epochs,  batch_size,
                                                                  x_train, y_train, x_eval, y_eval,
                                                                  parallel, **kwargs)
-            print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials),
-                  'LL:', ll, 'Mean RMSE:', mean_rmse)
-            if nans:
-                print('**** NaN Detected ****')
-                print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
 
             # save top priors for VBEM
             if prior_type == 'VBEM':
@@ -306,6 +297,15 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
                     b = tf.nn.softplus(mdl.v[i]).numpy()[0]
                     vbem_logger = vbem_logger.append(pd.DataFrame({'a': a, 'b': b, 'wins': c}, index=[t]))
                     vbem_logger.to_pickle(prior_file)
+
+        # print update
+        print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials),
+              'LL:', ll, 'Mean RMSE:', mean_rmse)
+
+        # print and log NaNs
+        if nans:
+            print('**** NaN Detected ****')
+            print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
 
         # save results
         new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'Hyper-Parameters': hyper_params,

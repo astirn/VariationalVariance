@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 
 from regression_data import generate_toy_data, REGRESSION_DATA
 from regression_experiments_v2 import RESULTS_DIR
-from analysis_utils import make_clean_method_names, build_table, champions_club_table
+from utils_analysis import make_clean_method_names, build_table, champions_club_table
 
 # enable background tiles on plots
 sns.set(color_codes=True)
