@@ -175,7 +175,12 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
     # dataset specific hyper-parameters
     n_trials = 5 if dataset in {'protein', 'year'} else 20
     batch_size = 500 if dataset == 'toy' else 256
-    batch_iterations = int(1e5) if dataset in {'carbon', 'naval', 'power plant', 'superconductivity'} else int(2e4)
+    if dataset == 'toy':
+        batch_iterations = int(6e3)
+    elif dataset in {'carbon', 'naval', 'power plant', 'superconductivity'}:
+        batch_iterations = int(1e5)
+    else:
+        batch_iterations = int(2e4)
 
     # establish experiment directory
     experiment_dir = 'regression_toy' if dataset == 'toy' else 'regression_uci'
