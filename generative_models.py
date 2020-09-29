@@ -9,11 +9,6 @@ from generative_data import load_data_set
 from utils_model import expected_log_normal, mixture_proportions, VariationalVariance
 from callbacks import LearningCurveCallback, ReconstructionCallback, LatentVisualizationCallback2D
 
-# workaround: https://github.com/tensorflow/tensorflow/issues/34888
-for gpu in tf.config.list_physical_devices('GPU'):
-    tf.config.experimental.set_memory_growth(gpu, enable=True)
-tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
-
 
 def encoder_dense(dim_in, dim_out, batch_norm, name):
     enc = tf.keras.Sequential(name=name)
@@ -508,6 +503,12 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
 
 
 if __name__ == '__main__':
+
+    # workaround: https://github.com/tensorflow/tensorflow/issues/34888
+    for gpu in tf.config.list_physical_devices('GPU'):
+        tf.config.experimental.set_memory_growth(gpu, enable=True)
+    tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
+
     # set configuration
     PX_FAMILY = 'Normal'
     BATCH_SIZE = 250
