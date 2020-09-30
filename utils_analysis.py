@@ -103,6 +103,12 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
         mean = mean.rename(columns={'mean': exp})
         test_table = mean if test_table is None else test_table.join(mean)
 
+    # make the table pretty
+    table = table.reset_index()
+    table.Algorithm = pd.Categorical(table.Algorithm, categories=['Detlefsen', 'Normal', 'Student', 'Gamma-Normal'])
+    table.Prior = pd.Categorical(table.Prior, categories=['N/A', 'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'])
+    table = table.sort_values(['Algorithm', 'Prior'])
+    table = table.set_index(keys=['Algorithm', 'Prior']).sort_index()
     if transpose:
         return table.T.to_latex(escape=False)
 
