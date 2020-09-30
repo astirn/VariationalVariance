@@ -13,20 +13,16 @@ from utils_analysis import make_clean_method_names, build_table, champions_club_
 sns.set(color_codes=True)
 
 
-def query_string(alg, prior):
-    return "Algorithm == '" + alg + "' and Prior == '" + prior + "'"
-
-
-def regression_subplot(alg, prior, ll_logger, data_logger, mv_logger, ax, color):
+def regression_subplot(method, ll_logger, data_logger, mv_logger, ax, color):
     # get best performance for this algorithm/prior combination
-    i_best = ll_logger.query(query_string(alg, prior))['LL'].idxmax()
+    i_best = ll_logger[ll_logger.Method == method]['LL'].idxmax()
 
     # plot the training data
-    data = data_logger.query(query_string(alg, prior)).loc[i_best]
+    data = data_logger[data_logger.Method == method].loc[i_best]
     sns.scatterplot(data['x'], data['y'], ax=ax, color=color)
 
     # plot the model's mean and standard deviation
-    model = mv_logger.query(query_string(alg, prior)).loc[i_best]
+    model = mv_logger[mv_logger.Method == method].loc[i_best]
     ax.plot(model['x'], model['mean(y|x)'], color=color)
     ax.fill_between(model['x'],
                     model['mean(y|x)'] - 2 * model['std(y|x)'],
@@ -49,14 +45,21 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
     data_logger = make_clean_method_names(data_logger)
     mv_logger = make_clean_method_names(mv_logger)
 
-    # get priors
-    priors = ll_logger['Prior'].unique()
+    # get methods for which we have data
+    methods_with_data = ll_logger['Method'].unique()
+
+    # methods and order in which we want to plot (if they are available)
+    method_order = ['Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student',
+                    'Gamma-Normal (MLE)', 'Gamma-Normal (Standard)',
+                    'Gamma-Normal (VAMP)', 'Gamma-Normal (VAMP*)',
+                    'Gamma-Normal (xVAMP)', 'Gamma-Normal (xVAMP*)',
+                    'Gamma-Normal (VBEM)', 'Gamma-Normal (VBEM*)']
 
     # size toy data figure
-    n_rows, n_cols = 3, len(priors)
+    n_rows, n_cols = 3, len(method_order) // 2
     fig = plt.figure(figsize=(2.9 * n_cols, 2.9 * n_rows), constrained_layout=False)
     gs = fig.add_gridspec(n_rows, n_cols)
-    for i, prior in enumerate(priors):
+    for i in range(n_cols):
         fig.add_subplot(gs[0, i])
         fig.add_subplot(gs[1, i])
         fig.add_subplot(gs[2, i])
@@ -69,49 +72,48 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
     colors = prop_cycle.by_key()['color']
 
     # plot toy regression subplots
-    i = -1
-    for prior in ['N/A', 'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*']:
-        if prior not in priors:
-            continue
-        i += 1
+    for i in range(n_cols):
 
         # first row subplots
-        ax = fig.axes[n_rows * i]
-        alg1 = 'Detlefsen' if prior == 'N/A' else 'Gamma-Normal'
-        regression_subplot(alg1, prior, ll_logger, data_logger, mv_logger, ax, colors[0])
-        ax.set_xlim([-5, 15])
-        ax.set_ylim([-25, 25])
-        ax.set_xlabel('')
-        ax.set_xticklabels([])
-        if i > 0:
-            ax.set_ylabel('')
-            ax.set_yticklabels([])
+        method1 = method_order[2 * i]
+        if method1 in methods_with_data:
+            ax = fig.axes[n_rows * i]
+            regression_subplot(method1, ll_logger, data_logger, mv_logger, ax, colors[0])
+            ax.set_xlim([-5, 15])
+            ax.set_ylim([-25, 25])
+            ax.set_xlabel('')
+            ax.set_xticklabels([])
+            if i > 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
 
         # second row subplots
-        ax = fig.axes[n_rows * i + 1]
-        alg2 = 'Detlefsen (fixed)' if prior == 'N/A' else 'LogNormal-Normal'
-        regression_subplot(alg2, prior, ll_logger, data_logger, mv_logger, ax, colors[1])
-        ax.set_xlim([-5, 15])
-        ax.set_ylim([-25, 25])
-        ax.set_xlabel('')
-        ax.set_xticklabels([])
-        if i > 0:
-            ax.set_ylabel('')
-            ax.set_yticklabels([])
+        method2 = method_order[2 * i + 1]
+        if method2 in methods_with_data:
+            ax = fig.axes[n_rows * i + 1]
+            regression_subplot(method2, ll_logger, data_logger, mv_logger, ax, colors[1])
+            ax.set_xlim([-5, 15])
+            ax.set_ylim([-25, 25])
+            ax.set_xlabel('')
+            ax.set_xticklabels([])
+            if i > 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
 
         # third row subplots
         ax = fig.axes[n_rows * i + 2]
         _, _, x_eval, _, true_std = generate_toy_data()
         ax.plot(x_eval, true_std, 'k', label='truth')
-        data = mv_logger.query(query_string(alg1, prior))
-        data = data.append(mv_logger.query(query_string(alg2, prior)))
-        sns.lineplot(x='x', y='std(y|x)', hue='Method', ci='sd', data=data, ax=ax)
-        ax.legend().remove()
-        ax.set_xlim([-5, 15])
-        ax.set_ylim([0, 6])
-        if i > 0:
-            ax.set_ylabel('')
-            ax.set_yticklabels([])
+        if method1 in methods_with_data and method2 in methods_with_data:
+            data = mv_logger[mv_logger.Method == method1]
+            data = data.append(mv_logger[mv_logger.Method == method2])
+            sns.lineplot(x='x', y='std(y|x)', hue='Method', ci='sd', data=data, ax=ax)
+            ax.legend().remove()
+            ax.set_xlim([-5, 15])
+            ax.set_ylim([0, 6])
+            if i > 0:
+                ax.set_ylabel('')
+                ax.set_yticklabels([])
 
     return fig
 
@@ -141,14 +143,10 @@ def toy_regression_analysis():
     fig.savefig(os.path.join('assets', 'fig_toy.pdf'))
 
 
-def exclude_log_normal(df, **kwargs):
-    return df[df.Algorithm != 'LogNormal-Normal']
-
-
 def uci_regression_analysis():
 
-        # experiment directory
-        experiment_dir = os.path.join(RESULTS_DIR, 'regression_uci_{:d}'.format(iterations))
+    # experiment directory
+    experiment_dir = os.path.join(RESULTS_DIR, 'regression_uci')
 
     # load results for each data set
     results = dict()

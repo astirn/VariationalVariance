@@ -15,9 +15,7 @@ def make_clean_method_names(df):
     :return: a pandas data frame containing the same results but with cleaner prior names and new methods column
     """
     # make clean method names for report
-    df['Method'] = df['Algorithm'] + ' (' + df['Prior'] + ')'
-    df.loc[df.Algorithm == 'Detlefsen', 'Method'] = 'Detlefsen'
-    df.loc[df.Algorithm == 'Detlefsen (fixed)', 'Method'] = 'Detlefsen (fixed)'
+    df['Method'] = df['Algorithm'] + df['Prior'].apply(lambda s: '' if s == 'N/A' else ' (' + s + ')')
     return df
 
 
