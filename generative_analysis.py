@@ -73,11 +73,11 @@ def generative_tables(results, bold_statistical_ties):
         # loop over the metrics
         for metric in set(df.columns) - {'Dataset', 'Method'}:
 
-            # get top performer
+            # get index of top performer
             if metric == 'LL':
-                i_best = np.argmax(mean[mean.Dataset == dataset][metric])
+                i_best = mean[mean.Dataset == dataset][metric].idxmax()
             else:
-                i_best = np.argmin(np.abs(mean[mean.Dataset == dataset][metric]))
+                i_best = mean[mean.Dataset == dataset][metric].abs().idxmin()
 
             # bold winner
             df.loc[mean[metric].index[i_best], metric] = '\\textbf{' + df.loc[mean[metric].index[i_best], metric] + '}'
