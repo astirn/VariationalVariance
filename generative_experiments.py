@@ -138,6 +138,7 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
                        validation_steps=np.ceil(info.splits['test'].num_examples // batch_size),
                        callbacks=[tf.keras.callbacks.TerminateOnNaN(),
                                   tf.keras.callbacks.EarlyStopping(monitor='val_LPPL',
+                                                                   min_delta=0.5,
                                                                    patience=50,
                                                                    mode='max',
                                                                    restore_best_weights=True)])
@@ -205,7 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_trials', type=int, default=1, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
-    parser.add_argument('--multi_gpu', default=1, type=int, help='random seed init, multiplied by trial number')
+    parser.add_argument('--multi_gpu', default=0, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
 
     # check inputs
