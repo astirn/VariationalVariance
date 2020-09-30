@@ -1,17 +1,18 @@
-\begin{tabular}{llll}
+\begin{tabular}{llllll}
 \toprule
-        &     &     LL Wins & Mean RMSE Wins \\
-Algorithm & Prior &             &                \\
+        &     & LL Hard Wins & LL Soft Wins & Mean RMSE Hard Wins & Mean RMSE Soft Wins \\
+Algorithm & Prior &              &              &                     &                     \\
 \midrule
-Gamma-Normal & MLE &           2 &              6 \\
-        & VAMP &           2 &     \textbf{9} \\
-        & VAMP* &           2 &     \textbf{9} \\
-        & VBEM &           2 &     \textbf{9} \\
-        & VBEM* &  \textbf{7} &              7 \\
-        & xVAMP &           4 &              6 \\
-        & xVAMP* &           4 &              6 \\
-Normal & N/A &           4 &              7 \\
-Student & N/A &           6 &              4 \\
+Detlefsen & N/A &            0 &            0 &                   1 &                   6 \\
+Gamma-Normal & MLE &            0 &            2 &                   0 &                   6 \\
+        & VAMP &            0 &            2 &                   1 &          \textbf{8} \\
+        & VAMP* &            0 &            2 &                   0 &          \textbf{8} \\
+        & VBEM &            0 &            2 &          \textbf{3} &          \textbf{8} \\
+        & VBEM* &   \textbf{5} &   \textbf{7} &                   2 &                   7 \\
+        & xVAMP &            0 &            4 &                   0 &                   6 \\
+        & xVAMP* &            2 &            4 &                   1 &                   6 \\
+Normal & N/A &            0 &            4 &                   2 &                   6 \\
+Student & N/A &            3 &            6 &                   0 &                   4 \\
 \bottomrule
 \end{tabular}
 
