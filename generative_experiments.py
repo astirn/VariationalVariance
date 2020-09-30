@@ -37,18 +37,14 @@ METHODS = [
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True,  'b': 1e-3}},
-    # TODO: ensure no NaNs for 0 < DoF <= 2
-    # # {'name': 'Student-VAE: $\\nu > 0$', 'mdl': StudentVAE,
-    # #  'kwargs': {'min_dof': 0}},
-    # {'name': 'Student-VAE: $\\nu > 3$', 'mdl': StudentVAE,
-    #  'kwargs': {'min_dof': 3}},
+    {'name': 'Student-VAE', 'mdl': StudentVAE,
+     'kwargs': {'min_dof': 3}},
 
     # Our Methods
-    # TODO: ensure no NaNs for 0 < DoF <= 2
-    # {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'prior': 'mle'}},
-    # {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'min_dof': 0, 'prior_type': 'Standard', 'a': 1.0, 'b': 1e-3}},
+    {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': 3, 'prior_type': 'MLE'}},
+    {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': 3, 'prior_type': 'Standard', 'a': 1.0, 'b': 1e-3}},
     # TODO: define more of these!
     # {'name': 'V3AE-xVAMP*', 'mdl': VariationalVarianceVAE,
     #  'kwargs': {'min_dof': 0, 'prior_type': 'xVAMP*'}},

@@ -66,7 +66,7 @@ def generative_tables(results, bold_statistical_ties):
     for metric in mean.columns:
 
         # get top performer
-        i_best = np.argmax(mean[metric]) if metric == 'LL' else np.argmin(mean[metric])
+        i_best = np.argmax(mean[metric]) if metric == 'LL' else np.argmin(np.abs(mean[metric]))
 
         # bold winner
         df.loc[mean[metric].index[i_best], metric] = '\\textbf{' + df.loc[mean[metric].index[i_best], metric] + '}'
@@ -86,12 +86,6 @@ def generative_tables(results, bold_statistical_ties):
             for i in range(df.shape[0]):
                 if p[i] >= 0.05:
                     df.loc[mean[metric].index[i], metric] = '\\textbf{' + df.loc[mean[metric].index[i], metric] + '}'
-
-    # # concatenate experiment to results table
-    # if main_body:
-    #     table = pd.concat([table, df.unstack(level=0).T.swaplevel(0, 1)])
-    # else:
-    #     table = pd.concat([table, df])
 
     return df.to_latex(escape=False)
 
