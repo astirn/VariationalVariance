@@ -146,34 +146,34 @@ def exclude_log_normal(df, **kwargs):
 
 
 def uci_regression_analysis():
-    # print result tables
-    for iterations in [10000, 200000]:
 
         # experiment directory
         experiment_dir = os.path.join(RESULTS_DIR, 'regression_uci_{:d}'.format(iterations))
 
-        # load results for each data set
-        results = dict()
-        for dataset in REGRESSION_DATA.keys():
-            result_dir = os.path.join(experiment_dir, dataset)
-            if os.path.exists(result_dir):
-                logger = pd.DataFrame()
-                for p in glob.glob(os.path.join(result_dir, '*.pkl')):
-                    logger = logger.append(pd.read_pickle(p))
-                results.update({dataset: logger})
+    # load results for each data set
+    results = dict()
+    for dataset in REGRESSION_DATA.keys():
+        result_dir = os.path.join(experiment_dir, dataset)
+        if os.path.exists(result_dir):
+            logger = pd.DataFrame()
+            for p in glob.glob(os.path.join(result_dir, '*.pkl')):
+                if '_prior' in p:
+                    continue
+                logger = logger.append(pd.read_pickle(p))
+            results.update({dataset: logger})
 
-        # make latex tables
-        max_cols = 5
-        with open(os.path.join('assets', 'regression_uci_{:d}_ll.tex'.format(iterations)), 'w') as f:
-            table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
-            print(table, file=f)
-        with open(os.path.join('assets', 'regression_uci_{:d}_rmse.tex'.format(iterations)), 'w') as f:
-            table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
-            print(table, file=f)
+    # make latex tables
+    max_cols = 5
+    with open(os.path.join('assets', 'regression_uci_ll.tex'), 'w') as f:
+        table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
+        print(table, file=f)
+    with open(os.path.join('assets', 'regression_uci_rmse.tex'), 'w') as f:
+        table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
+        print(table, file=f)
 
-        # print champions club
-        with open(os.path.join('assets', 'regression_uci_{:d}_champions_club.tex'.format(iterations)), 'w') as f:
-            print(champions_club_table([ll_cc, rmse_cc]), file=f)
+    # print champions club
+    with open(os.path.join('assets', 'regression_uci_champions_club.tex'), 'w') as f:
+        print(champions_club_table([ll_cc, rmse_cc]), file=f)
 
 
 if __name__ == '__main__':
