@@ -21,12 +21,13 @@ def make_clean_method_names(df):
     return df
 
 
-def build_table(results, metric, order, max_cols, process_fn=None, transpose=False):
+def build_table(results, metric, order, max_cols, bold_statistical_ties, process_fn=None, transpose=False):
     """
     :param results: dictionary of Panda data frames
     :param metric: name of desired metric (must be column in pandas data frame)
     :param order: how to order best results
     :param max_cols: max columns per row
+    :param bold_statistical_ties: whether to bold statistical ties for first place
     :param process_fn: optional processing functions
     :param transpose: whether to transpose the table
     :return: 
@@ -61,14 +62,20 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
         # initialize champions club if needed
         if champions_club is None:
             champions_club = mean.copy(deep=True)
-            champions_club[metric + ' Wins'] = 0
+            champions_club[metric + ' Hard Wins'] = 0
+            champions_club[metric + ' Soft Wins'] = 0
             del champions_club['mean']
 
         # build table
-        df = pd.DataFrame(mean['mean'].round(3).astype('str') + '$\\pm$' + std['std'].round(3).astype('str'), columns=[exp])
+        df = pd.DataFrame(mean['mean'].round(3).astype('str') + '$\\pm$' + std['std'].round(3).astype('str'),
+                          columns=[exp])
 
-        # get top performer
+        # get index of top performer, using numpy arg min/max is ok since only one dataset in mean table
         i_best = np.argmax(mean) if order == 'max' else np.argmin(mean)
+
+        # bold winner and update hard wins count
+        df.loc[mean.index[i_best]] = '\\textbf{' + df.loc[mean.index[i_best]] + '}'
+        champions_club.loc[mean.index[i_best], metric + ' Hard Wins'] += 1
 
         # get null hypothesis
         null_mean = mean.T[mean.T.columns[i_best]][0]
@@ -78,12 +85,16 @@ def build_table(results, metric, order, max_cols, process_fn=None, transpose=Fal
         ms = zip([m[0] for m in mean.to_numpy().tolist()], [s[0] for s in std.to_numpy().tolist()])
         p = [ttest_ind_from_stats(null_mean, null_std, n_trials, m, s, n_trials, False)[-1] for (m, s) in ms]
 
-        # bold statistical ties for best
+        # look for statistical ties
         if order is not None:
             for i in range(df.shape[0]):
-                if i == i_best or p[i] >= 0.05:
-                    df.loc[mean.index[i]] = '\\textbf{' + df.loc[mean.index[i]] + '}'
-                    champions_club.loc[mean.index[i]] += 1
+                if p[i] >= 0.05:
+                    # update soft wins count
+                    champions_club.loc[mean.index[i], metric + ' Soft Wins'] += 1
+
+                    # bold statistical ties if requested
+                    if bold_statistical_ties:
+                        df.loc[mean.index[i]] = '\\textbf{' + df.loc[mean.index[i]] + '}'
 
         # append experiment to results table
         table = df if table is None else table.join(df)

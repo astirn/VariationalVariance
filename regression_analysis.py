@@ -165,19 +165,15 @@ def uci_regression_analysis():
         # make latex tables
         max_cols = 5
         with open(os.path.join('assets', 'regression_uci_{:d}_ll.tex'.format(iterations)), 'w') as f:
-            ll_table, ll_champions_club = build_table(results, 'LL', 'max', max_cols, process_fn=[])
-            print(ll_table, file=f)
+            table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
+            print(table, file=f)
         with open(os.path.join('assets', 'regression_uci_{:d}_rmse.tex'.format(iterations)), 'w') as f:
-            rmse_table, rmse_champions_club = build_table(results, 'RMSE', 'min', max_cols, process_fn=[])
-            print(rmse_table, file=f)
-        with open(os.path.join('assets', 'regression_uci_{:d}_ll_short.tex'.format(iterations)), 'w') as f:
-            print(build_table(results, 'LL', 'max', max_cols, process_fn=[exclude_log_normal])[0], file=f)
-        with open(os.path.join('assets', 'regression_uci_{:d}_rmse_short.tex'.format(iterations)), 'w') as f:
-            print(build_table(results, 'RMSE', 'min', max_cols, process_fn=[exclude_log_normal])[0], file=f)
+            table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
+            print(table, file=f)
 
         # print champions club
         with open(os.path.join('assets', 'regression_uci_{:d}_champions_club.tex'.format(iterations)), 'w') as f:
-            print(champions_club_table([ll_champions_club, rmse_champions_club]), file=f)
+            print(champions_club_table([ll_cc, rmse_cc]), file=f)
 
 
 if __name__ == '__main__':
