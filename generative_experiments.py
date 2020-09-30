@@ -199,7 +199,7 @@ if __name__ == '__main__':
     # script arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='mnist', help='www.tensorflow.org/datasets/catalog/overview')
-    parser.add_argument('--num_trials', type=int, default=1, help='number of trials')
+    parser.add_argument('--num_trials', type=int, default=5, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
     parser.add_argument('--multi_gpu', default=0, type=int, help='random seed init, multiplied by trial number')
