@@ -7,7 +7,6 @@ import pandas as pd
 import torch as torch
 import tensorflow as tf
 
-from utils_analysis import RESULTS_DIR
 from generative_data import load_data_set
 from generative_models import FixedVarianceNormalVAE, NormalVAE, StudentVAE, VariationalVarianceVAE, precision_prior_params
 
@@ -60,15 +59,15 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
 
     # establish experiment directory
     experiment_dir = 'vae'
-    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir), exist_ok=True)
+    os.makedirs(os.path.join('results', experiment_dir), exist_ok=True)
 
     # make sure results subdirectory exists
-    os.makedirs(os.path.join(RESULTS_DIR, experiment_dir, dataset), exist_ok=True)
+    os.makedirs(os.path.join('results', experiment_dir, dataset), exist_ok=True)
 
     # create full file names
-    logger_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_metrics.pkl')
-    plotter_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_plots.pkl')
-    nan_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, method['name'] + '_nan_log.txt')
+    logger_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_metrics.pkl')
+    plotter_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_plots.pkl')
+    nan_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_nan_log.txt')
 
     # load results if we are resuming
     if mode == 'resume' and os.path.exists(logger_file) and os.path.exists(plotter_file):
@@ -216,7 +215,7 @@ if __name__ == '__main__':
         tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
 
     # make result directory if it doesn't already exist
-    os.makedirs(RESULTS_DIR, exist_ok=True)
+    os.makedirs('results', exist_ok=True)
 
     # run experiments accordingly
     for m in METHODS:
