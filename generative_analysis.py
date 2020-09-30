@@ -37,71 +37,61 @@ def raw_result_table(pickle_files, main_body):
     return raw_table
 
 
-def string_table(mean, std):
-    mean['LL'] = mean['LL'].round(2).astype('str')
-    std['LL'] = std['LL'].round(2).astype('str')
-    mean['RMSE'] = mean['RMSE'].round(3).astype('str')
-    std['RMSE'] = std['RMSE'].round(3).astype('str')
-    return mean + '$\\pm$' + std
+def string_table(df):
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: '{:.2f}'.format(x) if abs(x) > 0.1 else '{:.2e}'.format(x))
+    return df
 
 
-def generate_tables(pickle_files, main_body):
+def generate_tables(results, bold_statistical_ties):
 
-    # get raw results
-    raw_table = raw_result_table(pickle_files, main_body)
-    raw_table = raw_table.replace('V3AE-Uniform', 'V3AE-MLE')
+    # drop non-reported columns
+    results = results.drop(['Best Epoch'], axis=1)
 
-    # aggregate processed results into a table
-    table = None
-    for data in raw_table['Data'].unique():
+    # get number of trials
+    n_trials = max(results.index) + 1
 
-        # clean up the name
-        new_name = data.replace('_', ' ')
-        raw_table.loc[raw_table.Data == data, 'Data'] = new_name
-        data = new_name
+    # get means and standard deviations
+    mean = pd.DataFrame(results.groupby(['Dataset', 'Method'], sort=False).mean())
+    std = pd.DataFrame(results.groupby(['Dataset', 'Method'], sort=False).std(ddof=1))
 
-        # compute means and standard deviations over methods
-        experiment = raw_table[raw_table.Data == data]
-        experiment = experiment[experiment.Method != 'V3AE-Gamma-x']
-        experiment = experiment[experiment.Method != 'V3AE-VAMP-x']
-        experiment = experiment[experiment.Method != 'V3AE-VBEM-x']
-        groups = ['Data', 'Method'] if main_body else ['Data', 'Method', 'BatchNorm']
-        mean = pd.DataFrame(experiment.groupby(groups, sort=False).mean())
-        std = pd.DataFrame(experiment.groupby(groups, sort=False).std(ddof=1))
+    # build string table
+    df = string_table(mean.copy(deep=True))
+    if n_trials >= 2:
+        df += '$\\pm$' + string_table(std.copy(deep=True))
 
-        # build string table
-        df = string_table(mean.copy(deep=True), std.copy(deep=True))
+    # loop over the metrics
+    for metric in mean.columns:
 
-        # bold winners if sufficient trials
-        n_trials = max(experiment.index) + 1
-        if n_trials >= 2:
+        # get top performer
+        i_best = np.argmax(mean[metric]) if metric == 'LL' else np.argmin(mean[metric])
 
-            # loop over the metrics
-            for (metric, order) in [('LL', 'max'), ('RMSE', 'min')]:  #, ('Entropy', 'min')]:
+        # bold winner
+        df.loc[mean[metric].index[i_best], metric] = '\\textbf{' + df.loc[mean[metric].index[i_best], metric] + '}'
 
-                # get top performer
-                i_best = np.argmax(mean[metric]) if order == 'max' else np.argmin(mean[metric])
+        # bold statistical ties if sufficient trials and requested
+        if n_trials >= 2 and bold_statistical_ties:
 
-                # get null hypothesis
-                null_mean = mean[metric].to_numpy()[i_best]
-                null_std = std[metric].to_numpy()[i_best]
+            # get null hypothesis
+            null_mean = mean[metric].to_numpy()[i_best]
+            null_std = std[metric].to_numpy()[i_best]
 
-                # compute p-values
-                ms = zip([m for m in mean[metric].to_numpy().tolist()], [s for s in std[metric].to_numpy().tolist()])
-                p = [ttest_ind_from_stats(null_mean, null_std, n_trials, m, s, n_trials, False)[-1] for (m, s) in ms]
+            # compute p-values
+            ms = zip([m for m in mean[metric].to_numpy().tolist()], [s for s in std[metric].to_numpy().tolist()])
+            p = [ttest_ind_from_stats(null_mean, null_std, n_trials, m, s, n_trials, False)[-1] for (m, s) in ms]
 
-                # bold statistical ties for best
-                for i in range(df.shape[0]):
-                    if i == i_best or p[i] >= 0.05:
-                        df.loc[mean[metric].index[i], metric] = '\\textbf{' + df.loc[mean[metric].index[i], metric] + '}'
+            # bold statistical ties for best
+            for i in range(df.shape[0]):
+                if p[i] >= 0.05:
+                    df.loc[mean[metric].index[i], metric] = '\\textbf{' + df.loc[mean[metric].index[i], metric] + '}'
 
-        # concatenate experiment to results table
-        if main_body:
-            table = pd.concat([table, df.unstack(level=0).T.swaplevel(0, 1)])
-        else:
-            table = pd.concat([table, df])
+    # # concatenate experiment to results table
+    # if main_body:
+    #     table = pd.concat([table, df.unstack(level=0).T.swaplevel(0, 1)])
+    # else:
+    #     table = pd.concat([table, df])
 
-    return table.to_latex(escape=False)
+    return df.to_latex(escape=False)
 
 
 def image_reshape(x):
@@ -156,15 +146,22 @@ def generate_plots(pickle_files):
 
 
 def generative_analysis():
-    # get list of VAE experiments
-    results = glob.glob(os.path.join('results', 'generative_*_metrics.pkl'))
-    results.sort()
+
+    # experiment directory
+    experiment_dir = os.path.join('results', 'vae')
+
+    # load results for reach data set
+    results = pd.DataFrame()
+    for dataset in os.listdir(experiment_dir):
+        logger = pd.DataFrame()
+        for p in glob.glob(os.path.join(experiment_dir, dataset, '*_metrics.pkl')):
+            logger = logger.append(pd.read_pickle(p))
+        logger['Dataset'] = dataset.replace('_', ' ')
+        results = results.append(logger)
 
     # build tables
     with open(os.path.join('assets', 'generative_table.tex'), 'w') as f:
-        print(generate_tables(results, main_body=False), file=f)
-    with open(os.path.join('assets', 'generative_table_short.tex'), 'w') as f:
-        print(generate_tables(results, main_body=True), file=f)
+        print(generate_tables(results, bold_statistical_ties=False), file=f)
 
     # generate plots
     generate_plots(results)
