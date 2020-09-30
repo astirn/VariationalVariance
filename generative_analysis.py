@@ -4,13 +4,12 @@ import pickle
 import argparse
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from scipy.stats import ttest_ind_from_stats
 
-from utils_analysis import RESULTS_DIR
 from generative_experiments import METHODS
+
 
 def raw_result_table(pickle_files, main_body):
 
@@ -159,7 +158,7 @@ def generative_plots(experiment_dir, results):
 def generative_analysis():
 
     # experiment directory
-    experiment_dir = os.path.join(RESULTS_DIR, 'vae')
+    experiment_dir = os.path.join('results', 'vae')
 
     # load results for reach data set
     results = pd.DataFrame()

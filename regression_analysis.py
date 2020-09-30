@@ -6,11 +6,13 @@ import seaborn as sns
 from matplotlib import pyplot as plt
 
 from regression_data import generate_toy_data, REGRESSION_DATA
-from regression_experiments_v2 import RESULTS_DIR
 from utils_analysis import make_clean_method_names, build_table, champions_club_table
 
 # enable background tiles on plots
 sns.set(color_codes=True)
+
+# set results directory globally since its used all over this file
+RESULTS_DIR = 'resultsV4'
 
 
 def regression_subplot(method, ll_logger, data_logger, mv_logger, ax, color):

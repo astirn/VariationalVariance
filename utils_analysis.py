@@ -4,9 +4,6 @@ import numpy as np
 import pandas as pd
 from scipy.stats import ttest_ind_from_stats
 
-# results directory
-RESULTS_DIR = 'results'
-
 
 def make_clean_method_names(df):
     """
