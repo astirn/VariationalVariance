@@ -9,6 +9,8 @@ import tensorflow as tf
 from matplotlib import pyplot as plt
 from scipy.stats import ttest_ind_from_stats
 
+from utils_analysis import RESULTS_DIR
+from generative_experiments import METHODS
 
 def raw_result_table(pickle_files, main_body):
 
@@ -43,7 +45,7 @@ def string_table(df):
     return df
 
 
-def generate_tables(results, bold_statistical_ties):
+def generative_tables(results, bold_statistical_ties):
 
     # drop non-reported columns
     results = results.drop(['Best Epoch'], axis=1)
@@ -98,57 +100,52 @@ def image_reshape(x):
     return np.reshape(tf.transpose(x, [1, 0, 2, 3]), [x.shape[1], -1, x.shape[-1]])
 
 
-def generate_plots(pickle_files):
-
-    # get raw results
-    raw_table = raw_result_table(pickle_files, main_body=True)
+def generative_plots(experiment_dir, results):
 
     # loop over the experiments and methods
-    for data in raw_table['Data'].unique():
+    for dataset in results['Dataset'].unique():
 
-        # load plot data
-        with open(os.path.join('results', 'generative_' + data + '_plots.pkl'), 'rb') as f:
-            plots = pickle.load(f)
-
-        # get table and methods for this data set
-        t_data = raw_table[raw_table.Data == data]
-        methods = [m for m in t_data['Method'].unique() if m not in {'EB-MAP-VAE', 'EB-V3AE-Gamma'}]
-
-        # grab original data
-        x = np.squeeze(image_reshape(plots['x'][0::2]))
+        # get methods
+        methods = results['Method'].unique()
 
         # initialize figure
         fig, ax = plt.subplots(len(methods), 1, figsize=(16, 1.3 * len(methods)))
         plt.subplots_adjust(left=0.03, bottom=0.01, right=0.99, top=0.99, wspace=0.0, hspace=0.0)
 
-        # loop over the methods for this data set
-        for i, method in enumerate(methods):
+        # loop over the methods in the specified order
+        i = -1
+        for method in [m['name'] for m in METHODS]:
+            if method not in methods:
+                continue
+            i += 1
 
-            # select between the better of batch normalization being on or off
-            t_method = t_data[t_data.Method == method]
-            best_row = np.argmin(t_method['RMSE'])
-            batch_norm = False  # t_method.iloc[best_row]['BatchNorm']
+            # load plot data
+            with open(os.path.join(experiment_dir, dataset, method + '_plots.pkl'), 'rb') as f:
+                plots = pickle.load(f)
+
+            # grab original data
+            x = np.squeeze(image_reshape(plots['x'][0::2]))
 
             # grab the mean, std, and samples
-            best_trial = t_method['RMSE'].idxmin()
-            mean = np.squeeze(image_reshape(plots[method][batch_norm]['reconstruction'][best_trial]['mean'][0::2]))
-            std = np.squeeze(image_reshape(plots[method][batch_norm]['reconstruction'][best_trial]['std'][0::2]))
+            best_trial = results[results.Method == method]['LL'].idxmin()
+            mean = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['mean'][0::2]))
+            std = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['std'][0::2]))
             if len(std.shape) == 3:
                 std = 1 - std
-            sample = np.squeeze(image_reshape(plots[method][batch_norm]['reconstruction'][best_trial]['sample'][0::2]))
+            sample = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['sample'][0::2]))
             ax[i].imshow(np.concatenate((x, mean, std, sample), axis=0), vmin=0, vmax=1, cmap='Greys')
             ax[i].set_xticks([])
             ax[i].set_yticks([])
-            ax[i].set_ylabel(method.replace('Uniform', 'MLE'), fontsize=13)
+            ax[i].set_ylabel(method, fontsize=8)
 
         # save figure
-        fig.savefig(os.path.join('assets', 'fig_vae_samples_' + data + '.pdf'))
+        fig.savefig(os.path.join('assets', 'fig_vae_samples_' + dataset + '.pdf'))
 
 
 def generative_analysis():
 
     # experiment directory
-    experiment_dir = os.path.join('results', 'vae')
+    experiment_dir = os.path.join(RESULTS_DIR, 'vae')
 
     # load results for reach data set
     results = pd.DataFrame()
@@ -161,10 +158,10 @@ def generative_analysis():
 
     # build tables
     with open(os.path.join('assets', 'generative_table.tex'), 'w') as f:
-        print(generate_tables(results, bold_statistical_ties=False), file=f)
+        print(generative_tables(results, bold_statistical_ties=False), file=f)
 
     # generate plots
-    generate_plots(results)
+    generative_plots(experiment_dir, results)
 
 
 if __name__ == '__main__':
