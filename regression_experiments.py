@@ -10,7 +10,6 @@ import pandas as pd
 import sklearn as skl
 import tensorflow as tf
 
-from utils_analysis import RESULTS_DIR
 from regression_data import generate_toy_data
 from callbacks import RegressionCallback
 from regression_models import prior_params, NormalRegression, StudentRegression, VariationalPrecisionNormalRegression
@@ -281,7 +280,8 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
             ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=True)
 
         elif algorithm == 'Detlefsen' and dataset != 'toy':
-            ll, mean_rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval, batch_iterations, batch_size, copy.deepcopy(parser))
+            ll, mean_rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval,
+                                                   batch_iterations, batch_size, copy.deepcopy(parser))
 
         else:
             ll, mean_rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
