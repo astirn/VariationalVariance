@@ -16,8 +16,8 @@ declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant"
 declare -a MaximumLikelihoodAlgorithms=("Normal" "Student" "Detlefsen")
 
 # Bayesian algorithms and priors
-declare -a BayesianAlgorithms=("Gamma-Normal") # "LogNormal-Normal")
-declare -a PriorTypes=("MLE" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
+declare -a BayesianAlgorithms=("Gamma-Normal")
+declare -a PriorTypes=("VAP" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
 
 # loop over datasets
 for data in "${Datasets[@]}"; do
@@ -27,11 +27,11 @@ for data in "${Datasets[@]}"; do
 
     # run jobs in parallel if specified
     if [ $N -gt 1 ]; then
-      python regression_experiments_v2.py --dataset "$data" --algorithm $alg --mode $MODE  --parallel 1 &
+      python regression_experiments.py --dataset "$data" --algorithm $alg --mode $MODE  --parallel 1 &
 
     # otherwise, run job in foreground
     else
-      python regression_experiments_v2.py --dataset "$data" --algorithm $alg --mode $MODE  --parallel 0
+      python regression_experiments.py --dataset "$data" --algorithm $alg --mode $MODE  --parallel 0
     fi
 
     # check/wait for maximum jobs
@@ -46,12 +46,12 @@ for data in "${Datasets[@]}"; do
 
       # run jobs in parallel if specified
       if [ $N -gt 1 ]; then
-        python regression_experiments_v2.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
+        python regression_experiments.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
           --k 100 --parallel 1 &
 
       # otherwise, run job in foreground
       else
-        python regression_experiments_v2.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
+        python regression_experiments.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
           --k 100 --parallel 0
       fi
 
