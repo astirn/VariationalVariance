@@ -19,6 +19,9 @@ sys.path.append(os.path.join(os.getcwd(), 'john-master'))
 from toy_regression import detlefsen_toy_baseline
 from experiment_regression import detlefsen_uci_baseline
 
+# set results directory globally since its used all over this file
+RESULTS_DIR = 'results'
+
 
 class MeanVarianceLogger(object):
     def __init__(self, df_data=None, df_eval=None):
@@ -57,7 +60,7 @@ class MeanVarianceLogger(object):
         self.df_eval = self.df_eval.append(df_new)
 
 
-def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs):
+def train_and_eval(dataset, algo, prior, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs):
 
     # toy data configuration
     if dataset == 'toy':
@@ -71,7 +74,7 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
         # prior parameters
         u = np.expand_dims(np.linspace(np.min(x_eval), np.max(x_eval), 20), axis=-1)
-        a, b = prior_params(kwargs.get('precisions'), prior_fam)
+        a, b = prior_params(kwargs.get('precisions'), prior_fam='Gamma')
 
     # UCI data configuration
     else:
@@ -95,9 +98,9 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
     ds_eval = ds_eval.shuffle(10000, reshuffle_each_iteration=True).batch(batch_size)
 
     # pick appropriate model and gradient clip value
-    if algorithm == 'Normal':
+    if algo == 'Normal':
         model = NormalRegression
-    elif algorithm == 'Student':
+    elif algo == 'Student':
         model = StudentRegression
     else:
         model = VariationalPrecisionNormalRegression
@@ -109,8 +112,8 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
                 d_out=y_train.shape[1],
                 y_mean=0.0 if dataset == 'toy' else np.mean(y_train, axis=0),
                 y_var=1.0 if dataset == 'toy' else np.var(y_train, axis=0),
-                prior_type=prior_type,
-                prior_fam=prior_fam,
+                prior_type=prior,
+                prior_fam='Gamma',
                 num_mc_samples=num_mc_samples,
                 a=a,
                 b=b,
@@ -143,32 +146,45 @@ def train_and_eval(dataset, algorithm, prior_type, prior_fam, epochs, batch_size
 
     # evaluate predictive model with increased Monte-Carlo samples (if sampling is used by the particular model)
     mdl.num_mc_samples = 2000
-    mdl_mean, mdl_std, mdl_samples = mdl.predictive_moments_and_samples(x_eval)
+    y_mean, y_std, y_new = mdl.predictive_moments_and_samples(x_eval)
+    y_eval = tf.cast(y_eval, tf.float64)
+    y_mean = tf.cast(y_mean, tf.float64)
+    y_std = tf.cast(y_std, tf.float64)
+    y_new = tf.cast(y_new, tf.float64)
+    mean_residuals = y_mean - y_eval
+    var_residuals = y_std ** 2 - mean_residuals ** 2
+    sample_residuals = y_new - y_eval
+    metrics = {
+        'LL': ll,
+        'Mean RMSL2': mean_rmse,
+        'Mean Bias': tf.reduce_mean(mean_residuals).numpy(),
+        'Mean RMSE': tf.sqrt(tf.reduce_mean(mean_residuals ** 2)).numpy(),
+        'Var Bias': tf.reduce_mean(var_residuals).numpy(),
+        'Var RMSE': tf.sqrt(tf.reduce_mean(var_residuals ** 2)).numpy(),
+        'Sample Bias': tf.reduce_mean(sample_residuals).numpy(),
+        'Sample RMSE': tf.sqrt(tf.reduce_mean(sample_residuals ** 2)).numpy()
+    }
 
-    return ll, mean_rmse, mdl_mean, mdl_std, nan_detected, mdl
+    return mdl, metrics, y_mean, y_std, nan_detected
 
 
-def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs):
-    assert algorithm in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student', 'Gamma-Normal', 'LogNormal-Normal'}
-    assert not (algorithm == 'Detlefsen (fixed)' and dataset != 'toy')
+def run_experiments(algo, dataset, mode='resume', parallel=False, **kwargs):
+    assert algo in {'Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student', 'Gamma-Normal'}
+    assert not (algo == 'Detlefsen (fixed)' and dataset != 'toy')
     assert mode in {'replace', 'resume'}
 
     # parse algorithm/prior names
-    if algorithm == 'Gamma-Normal':
+    if algo == 'Gamma-Normal':
         prior_fam = 'Gamma'
         prior_type = kwargs.pop('prior_type')
-        base_name = algorithm + '_' + prior_type
-    elif algorithm == 'LogNormal-Normal':
-        prior_fam = 'LogNormal'
-        prior_type = kwargs.pop('prior_type')
-        base_name = algorithm + '_' + prior_type
+        base_name = algo + '_' + prior_type
     else:
         prior_fam = ''
         prior_type = 'N/A'
-        base_name = algorithm
+        base_name = algo
 
     # dataset specific hyper-parameters
-    n_trials = 5 if dataset in {'protein', 'year'} else 20
+    n_trials = 10 if dataset in {'toy', 'protein', 'year'} else 20
     batch_size = 500 if dataset == 'toy' else 256
     if dataset == 'toy':
         batch_iterations = int(6e3)
@@ -186,7 +202,7 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
 
         # if prior parameters not provided, use best discovered parameter set from VBEM
         if kwargs.get('a') is None or kwargs.get('b') is None:
-            relevant_prior_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, algorithm + '_VBEM_prior.pkl')
+            relevant_prior_file = os.path.join(RESULTS_DIR, experiment_dir, dataset, algo + '_VBEM_prior.pkl')
             assert os.path.exists(relevant_prior_file)
             prior_params = pd.read_pickle(relevant_prior_file)
             a, b = np.squeeze(pd.DataFrame(prior_params.groupby(['a', 'b'])['wins'].sum().idxmax()).to_numpy())
@@ -219,11 +235,14 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
         if prior_type == 'VBEM':
             vbem_logger = pd.read_pickle(prior_file)
         t_start = max(logger.index)
-        print('Resuming', dataset, algorithm, prior_type, 'at trial {:d}'.format(t_start + 2))
+        print('Resuming', dataset, algo, prior_type, 'at trial {:d}'.format(t_start + 2))
 
     # otherwise, initialize the loggers
     else:
-        logger = pd.DataFrame(columns=['Algorithm', 'Prior', 'Hyper-Parameters', 'LL', 'Mean RMSE'])
+        logger = pd.DataFrame(columns=['Algorithm', 'Prior', 'Hyper-Parameters', 'LL',
+                                       'Mean RMSL2', 'Mean Bias', 'Mean RMSE',
+                                       'Var Bias', 'Var RMSE',
+                                       'Sample Bias', 'Sample RMSE'])
         if os.path.exists(nan_file):
             os.remove(nan_file)
         if dataset == 'toy':
@@ -235,7 +254,7 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
     # loop over the trials
     for t in range(t_start + 1, n_trials):
         if not parallel:
-            print('\n*****', dataset, 'trial {:d}/{:d}:'.format(t + 1, n_trials), algorithm, prior_type, '*****')
+            print('\n*****', dataset, 'trial {:d}/{:d}:'.format(t + 1, n_trials), algo, prior_type, '*****')
 
         # set random number seeds
         seed = args.seed_init * (t + 1)
@@ -273,34 +292,35 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
 
         # run appropriate algorithm
         nans = False
-        if algorithm == 'Detlefsen' and dataset == 'toy':
+        if algo == 'Detlefsen' and dataset == 'toy':
             ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=False)
+            metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
 
-        elif algorithm == 'Detlefsen (fixed)' and dataset == 'toy':
+        elif algo == 'Detlefsen (fixed)' and dataset == 'toy':
             ll, mean_rmse, mean, std = detlefsen_toy_baseline(x_train, y_train, x_eval, y_eval, bug_fix=True)
+            metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
 
-        elif algorithm == 'Detlefsen' and dataset != 'toy':
+        elif algo == 'Detlefsen' and dataset != 'toy':
             ll, mean_rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval,
                                                    batch_iterations, batch_size, copy.deepcopy(parser))
+            metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
 
         else:
-            ll, mean_rmse, mean, std, nans, mdl = train_and_eval(dataset, algorithm, prior_type, prior_fam,
-                                                                 epochs,  batch_size,
-                                                                 x_train, y_train, x_eval, y_eval,
-                                                                 parallel, **kwargs)
+            mdl, metrics, mean, std, nan_detected = train_and_eval(dataset, algo, prior_type, epochs, batch_size,
+                                                                   x_train, y_train, x_eval, y_eval, parallel, **kwargs)
 
-            # save top priors for VBEM
-            if prior_type == 'VBEM':
-                indices, counts = np.unique(np.argmax(mdl.pi(x_eval), axis=1), return_counts=True)
-                for i, c in zip(indices, counts):
-                    a = tf.nn.softplus(mdl.u[i]).numpy()[0]
-                    b = tf.nn.softplus(mdl.v[i]).numpy()[0]
-                    vbem_logger = vbem_logger.append(pd.DataFrame({'a': a, 'b': b, 'wins': c}, index=[t]))
-                    vbem_logger.to_pickle(prior_file)
+        # save top priors for VBEM
+        if prior_type == 'VBEM':
+            indices, counts = np.unique(np.argmax(mdl.pi(x_eval), axis=1), return_counts=True)
+            for i, c in zip(indices, counts):
+                a = tf.nn.softplus(mdl.u[i]).numpy()[0]
+                b = tf.nn.softplus(mdl.v[i]).numpy()[0]
+                vbem_logger = vbem_logger.append(pd.DataFrame({'a': a, 'b': b, 'wins': c}, index=[t]))
+                vbem_logger.to_pickle(prior_file)
 
         # print update
-        print(dataset, algorithm, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials),
-              'LL:', ll, 'Mean RMSE:', mean_rmse)
+        print(dataset, algo, prior_type, '{:d}/{:d}:'.format(t + 1, n_trials))
+        print(metrics)
 
         # print and log NaNs
         if nans:
@@ -308,12 +328,11 @@ def run_experiments(algorithm, dataset, mode='resume', parallel=False, **kwargs)
             print(dataset, prior_fam, prior_type, t + 1, file=open(nan_file, 'a'))
 
         # save results
-        new_df = pd.DataFrame({'Algorithm': algorithm, 'Prior': prior_type, 'Hyper-Parameters': hyper_params,
-                               'LL': ll, 'Mean RMSE': mean_rmse}, index=[t])
-        logger = logger.append(new_df)
+        metrics.update({'Algorithm': algo, 'Prior': prior_type, 'Hyper-Parameters': hyper_params})
+        logger = logger.append(pd.DataFrame(metrics, index=[t]))
         logger.to_pickle(logger_file)
         if dataset == 'toy':
-            mv_logger.update(algorithm, prior_type, x_train, y_train, x_eval, mean, std, trial=t)
+            mv_logger.update(algo, prior_type, x_train, y_train, x_eval, mean, std, trial=t)
             mv_logger.df_data.to_pickle(data_file)
             mv_logger.df_eval.to_pickle(mv_file)
 

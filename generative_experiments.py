@@ -41,7 +41,7 @@ METHODS = [
 
     # Our Methods
     {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE,
-     'kwargs': {'min_dof': 3, 'prior_type': 'MLE'}},
+     'kwargs': {'min_dof': 3, 'prior_type': 'VAP'}},
     {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
      'kwargs': {'min_dof': 3, 'prior_type': 'Standard', 'a': 1.0, 'b': 1e-3}},
     # TODO: define more of these!

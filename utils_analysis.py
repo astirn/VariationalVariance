@@ -49,6 +49,7 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
             log = fn(log, **{'mode': 'tex', 'metric': metric})
 
         # compute means and standard deviations over methods
+        log = log.convert_dtypes()
         mean = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].mean())
         mean = mean.rename(columns={metric: 'mean'}).sort_values(['Algorithm', 'Prior'])
         std = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].std(ddof=1))
@@ -66,7 +67,7 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
                           columns=[exp])
 
         # get index of top performer, using numpy arg min/max is ok since only one dataset in mean table
-        i_best = np.argmax(mean) if order == 'max' else np.argmin(mean)
+        i_best = np.argmax(mean) if order == 'max' else np.argmin(mean.abs())
 
         # bold winner and update hard wins count
         df.loc[mean.index[i_best]] = '\\textbf{' + df.loc[mean.index[i_best]] + '}'
@@ -101,7 +102,7 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
     # make the table pretty
     table = table.reset_index()
     table.Algorithm = pd.Categorical(table.Algorithm, categories=['Detlefsen', 'Normal', 'Student', 'Gamma-Normal'])
-    table.Prior = pd.Categorical(table.Prior, categories=['N/A', 'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'])
+    table.Prior = pd.Categorical(table.Prior, categories=['N/A', 'VAP', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'])
     table = table.sort_values(['Algorithm', 'Prior'])
     table = table.set_index(keys=['Algorithm', 'Prior']).sort_index()
     if transpose:
@@ -155,4 +156,4 @@ def champions_club_table(champion_clubs):
                 champions_club.loc[index, col] = '\\textbf{' + row[col] + '}'
             else:
                 champions_club.loc[index, col] = row[col]
-    return champions_club.to_latex(escape=False)
+    return champions_club.T.to_latex(escape=False)

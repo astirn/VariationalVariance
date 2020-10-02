@@ -50,7 +50,7 @@ def toy_regression_plot(ll_logger, data_logger, mv_logger):
 
     # methods and order in which we want to plot (if they are available)
     method_order = ['Detlefsen', 'Detlefsen (fixed)', 'Normal', 'Student',
-                    'Gamma-Normal (MLE)', 'Gamma-Normal (Standard)',
+                    'Gamma-Normal (VAP)', 'Gamma-Normal (Standard)',
                     'Gamma-Normal (VAMP)', 'Gamma-Normal (VAMP*)',
                     'Gamma-Normal (xVAMP)', 'Gamma-Normal (xVAMP*)',
                     'Gamma-Normal (VBEM)', 'Gamma-Normal (VBEM*)']
@@ -166,12 +166,16 @@ def uci_regression_analysis():
         table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
         print(table, file=f)
     with open(os.path.join('assets', 'regression_uci_rmse.tex'), 'w') as f:
-        table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
+        table, rmse_cc = build_table(results, 'Mean RMSL2', 'min', max_cols, bold_statistical_ties=False)
+        print(table, file=f)
+    with open(os.path.join('assets', 'regression_uci_var_bias.tex'), 'w') as f:
+        table, var_bias_cc = build_table(results, 'Var Bias', 'min', max_cols, process_fn=[drop_detlefsen],
+                                         bold_statistical_ties=False)
         print(table, file=f)
 
     # print champions club
     with open(os.path.join('assets', 'regression_uci_champions_club.tex'), 'w') as f:
-        print(champions_club_table([ll_cc, rmse_cc]), file=f)
+        print(champions_club_table([ll_cc, rmse_cc, var_bias_cc]), file=f)
 
 
 if __name__ == '__main__':

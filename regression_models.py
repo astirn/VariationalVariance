@@ -149,7 +149,8 @@ class StudentRegression(PredictiveStudent):
 
         # build parameter networks
         self.mu = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
-        self.alpha = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='alpha')
+        self.alpha_network = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='alpha')
+        self.alpha = lambda x: self.alpha_network(x) + 1
         self.beta = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='beta')
 
     def ll(self, y, mu, alpha, beta, whiten_targets):
@@ -205,7 +206,8 @@ class VariationalPrecisionNormalRegression(PredictiveStudent, VariationalVarianc
         # build parameter networks
         self.mu = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=None, name='mu')
         alpha_f_out = 'softplus' if self.prior_fam == 'Gamma' else None
-        self.alpha = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=alpha_f_out, name='alpha')
+        self.alpha_network = neural_network(d_in, d_hidden, f_hidden, d_out, f_out=alpha_f_out, name='alpha')
+        self.alpha = lambda x: self.alpha_network(x) + 1
         self.beta = neural_network(d_in, d_hidden, f_hidden, d_out, f_out='softplus', name='beta')
         if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
             self.pi = neural_network(d_in, d_hidden, f_hidden, self.u.shape[0], f_out='softmax', name='pi')

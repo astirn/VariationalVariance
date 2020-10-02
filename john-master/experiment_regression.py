@@ -650,8 +650,8 @@ def john(args, X, y, Xval, yval):
                 ll = t_likelihood(y_eval, m, v.unsqueeze(0)).item()
             else:
                 ll = t_likelihood(y_eval, m, v).item()
-            if it % (500 * its_per_epoch) == 0:
-                print('Epoch {:d}/{:d},'.format(it // its_per_epoch, epochs), 'Loss {:.4f},'.format(ll))
+            # if it % (500 * its_per_epoch) == 0:
+            #     print('Epoch {:d}/{:d},'.format(it // its_per_epoch, epochs), 'Loss {:.4f},'.format(ll))
 
             # log validation performance after we are stable in the second optimization regime
             if it > args.iters * 0.60:

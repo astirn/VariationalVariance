@@ -67,7 +67,7 @@ class VariationalVariance(object):
 
     def __init__(self, dim_precision, prior_type, prior_fam, **kwargs):
         assert isinstance(dim_precision, int) and dim_precision > 0
-        assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
+        assert prior_type in {'VAP', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
         assert prior_fam in {'Gamma', 'LogNormal'}
 
         # save configuration
