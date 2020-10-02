@@ -7,7 +7,7 @@ python regression_data.py
 MODE="resume"
 
 # number of parallel jobs
-N=4
+N=5
 
 # dataset iterators
 declare -a Datasets=("boston" "carbon" "concrete" "energy" "naval" "power plant" "superconductivity" "wine-red" "wine-white" "yacht")
