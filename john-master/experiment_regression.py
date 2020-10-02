@@ -558,7 +558,7 @@ def john(args, X, y, Xval, yval):
                     samples_var = gamma_dist.rsample(torch.Size([num_draws_train]))
                     x_var = (1.0/(samples_var+1e-8))
                 else:
-                    samples_var = gamma_dist.rsample(torch.Size([1000]))
+                    samples_var = gamma_dist.rsample(torch.Size([2000]))
                     x_var = (1.0/(samples_var+1e-8))
                 var = (1-s) * x_var + s * y_std ** 2
 
@@ -671,7 +671,14 @@ def john(args, X, y, Xval, yval):
     # get best LL
     i_best = np.argmax(ll_list)
 
-    return ll_list[i_best], mae_list[i_best], rmse_list[i_best]
+    # evaluate model moments
+    with torch.no_grad():
+        model.training = False
+        m, v = model(x_eval, 1.0)
+        m = m * y_std + y_mean
+        v = v * y_std ** 2
+
+    return ll_list[i_best], rmse_list[i_best], m.cpu().numpy(), v.cpu().numpy()
 
 
 def detlefsen_uci_baseline(x_train, y_train, x_test, y_test, iterations, batch_size, parser=None):
@@ -684,11 +691,9 @@ def detlefsen_uci_baseline(x_train, y_train, x_test, y_test, iterations, batch_s
     args.batch_size = batch_size
 
     # train model and get its mean and std estimates on the evaluation points
-    ll, mae, rmse = john(args, x_train, y_train, x_test, y_test)
+    ll, rmsl2, mean, variance_samples = john(args, x_train, y_train, x_test, y_test)
 
-    print('LL Estimate:', ll, ', RMSE:', rmse)
-
-    return ll, rmse
+    return ll, rmsl2, mean, variance_samples
 
 #%%
 if __name__ == '__main__':

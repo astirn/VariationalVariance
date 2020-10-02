@@ -13,6 +13,7 @@ import tensorflow as tf
 from regression_data import generate_toy_data
 from callbacks import RegressionCallback
 from regression_models import prior_params, NormalRegression, StudentRegression, VariationalPrecisionNormalRegression
+from utils_model import monte_carlo_student_t
 
 # import Detlefsen baseline model
 sys.path.append(os.path.join(os.getcwd(), 'john-master'))
@@ -58,6 +59,25 @@ class MeanVarianceLogger(object):
         df_new = pd.DataFrame(dict(zip(self.cols_eval, (algorithm_list, prior_list, x_eval, mean, std))),
                               index=[trial] * len(x_eval))
         self.df_eval = self.df_eval.append(df_new)
+
+
+def compute_metrics(y_eval, y_mean, y_std, y_new):
+    y_eval = tf.cast(y_eval, tf.float64)
+    y_mean = tf.cast(y_mean, tf.float64)
+    y_std = tf.cast(y_std, tf.float64)
+    y_new = tf.cast(y_new, tf.float64)
+    mean_residuals = y_mean - y_eval
+    var_residuals = y_std ** 2 - mean_residuals ** 2
+    sample_residuals = y_new - y_eval
+    metrics = {
+        'Mean Bias': tf.reduce_mean(mean_residuals).numpy(),
+        'Mean RMSE': tf.sqrt(tf.reduce_mean(mean_residuals ** 2)).numpy(),
+        'Var Bias': tf.reduce_mean(var_residuals).numpy(),
+        'Var RMSE': tf.sqrt(tf.reduce_mean(var_residuals ** 2)).numpy(),
+        'Sample Bias': tf.reduce_mean(sample_residuals).numpy(),
+        'Sample RMSE': tf.sqrt(tf.reduce_mean(sample_residuals ** 2)).numpy()
+    }
+    return metrics
 
 
 def train_and_eval(dataset, algo, prior, epochs, batch_size, x_train, y_train, x_eval, y_eval, parallel, **kwargs):
@@ -147,23 +167,8 @@ def train_and_eval(dataset, algo, prior, epochs, batch_size, x_train, y_train, x
     # evaluate predictive model with increased Monte-Carlo samples (if sampling is used by the particular model)
     mdl.num_mc_samples = 2000
     y_mean, y_std, y_new = mdl.predictive_moments_and_samples(x_eval)
-    y_eval = tf.cast(y_eval, tf.float64)
-    y_mean = tf.cast(y_mean, tf.float64)
-    y_std = tf.cast(y_std, tf.float64)
-    y_new = tf.cast(y_new, tf.float64)
-    mean_residuals = y_mean - y_eval
-    var_residuals = y_std ** 2 - mean_residuals ** 2
-    sample_residuals = y_new - y_eval
-    metrics = {
-        'LL': ll,
-        'Mean RMSL2': mean_rmse,
-        'Mean Bias': tf.reduce_mean(mean_residuals).numpy(),
-        'Mean RMSE': tf.sqrt(tf.reduce_mean(mean_residuals ** 2)).numpy(),
-        'Var Bias': tf.reduce_mean(var_residuals).numpy(),
-        'Var RMSE': tf.sqrt(tf.reduce_mean(var_residuals ** 2)).numpy(),
-        'Sample Bias': tf.reduce_mean(sample_residuals).numpy(),
-        'Sample RMSE': tf.sqrt(tf.reduce_mean(sample_residuals ** 2)).numpy()
-    }
+    metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
+    metrics.update(compute_metrics(y_eval, y_mean, y_std, y_new))
 
     return mdl, metrics, y_mean, y_std, nan_detected
 
@@ -301,9 +306,11 @@ def run_experiments(algo, dataset, mode='resume', parallel=False, **kwargs):
             metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
 
         elif algo == 'Detlefsen' and dataset != 'toy':
-            ll, mean_rmse = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval,
-                                                   batch_iterations, batch_size, copy.deepcopy(parser))
-            metrics = {'LL': ll, 'Mean RMSL2': mean_rmse}
+            ll, rmsl2, mean, var_samples = detlefsen_uci_baseline(x_train, y_train, x_eval, y_eval,
+                                                                  batch_iterations, batch_size, copy.deepcopy(parser))
+            py_x = monte_carlo_student_t(mean, 1 / var_samples)
+            metrics = {'LL': ll, 'Mean RMSL2': rmsl2}
+            metrics.update(compute_metrics(y_eval, py_x.mean(), py_x.stddev(), py_x.sample()))
 
         else:
             mdl, metrics, mean, std, nan_detected = train_and_eval(dataset, algo, prior_type, epochs, batch_size,
