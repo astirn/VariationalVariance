@@ -283,6 +283,7 @@ class NormalVAE(VAE):
         self.grad_adjust = 'None'
         self.a = None if kwargs.get('a') is None else tf.constant(kwargs.get('a'), dtype=tf.float32)
         self.b = None if kwargs.get('b') is None else tf.constant(kwargs.get('b'), dtype=tf.float32)
+        assert (self.a is None and self.b is None) or (self.a is not None and self.b is not None)
 
         # select network architectures accordingly
         decoder = decoder_dense if architecture == 'dense' else decoder_convolution
@@ -342,8 +343,8 @@ class NormalVAE(VAE):
         dkl_z = qz_x.kl_divergence(self.pz)
 
         # MAP-VAE option: adds log p(precision) to ELBO
-        if self.b is not None:
-            pp = tfp.distributions.Gamma(tf.constant(1.0, dtype=tf.float32) if self.a is None else self.a, self.b)
+        if self.a is not None and self.b is not None:
+            pp = tfp.distributions.Gamma(self.a, self.b)
             ll_precision = tf.reduce_mean(tf.reduce_sum(pp.log_prob(sigma ** -2), axis=-1), axis=0)
         else:
             ll_precision = tf.constant(0.0, dtype=tf.float32)
@@ -517,6 +518,7 @@ if __name__ == '__main__':
     DIM_Z = 10
     NUM_MC_SAMPLES = 10
     PSEUDO_INPUTS_PER_CLASS = 10
+    MIN_DOF = 3
 
     # load the data set
     train_set, test_set, info = load_data_set(data_set_name='mnist', px_family=PX_FAMILY, batch_size=BATCH_SIZE)
@@ -531,9 +533,9 @@ if __name__ == '__main__':
     # vae = FixedVarianceNormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
     #                              num_mc_samples=NUM_MC_SAMPLES, variance=1)
 
-    # VAE with shared mean/variance decoder network
-    vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-                    num_mc_samples=NUM_MC_SAMPLES, split_decoder=False)
+    # # VAE with shared mean/variance decoder network
+    # vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+    #                 num_mc_samples=NUM_MC_SAMPLES, split_decoder=False)
 
     # # VAE with split mean/variance decoder network
     # vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
@@ -541,7 +543,7 @@ if __name__ == '__main__':
 
     # # MAP VAE (Takahashi, 2018)
     # vae = NormalVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                 num_mc_samples=NUM_MC_SAMPLES, split_decoder=True, b=1e-3)
+    #                 num_mc_samples=NUM_MC_SAMPLES, split_decoder=True, a=1.0, b=1e-3)
 
     # # Student-T VAE (Takahashi, 2018)
     # vae = StudentVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
@@ -549,7 +551,7 @@ if __name__ == '__main__':
 
     # # Variational Variance VAE (ours) + standard prior
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='Standard', a=2., b=1e-2)
+    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='Standard', a=1.0, b=1e-3)
 
     # # Variational Variance VAE (ours) + VAMP prior
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
@@ -576,7 +578,7 @@ if __name__ == '__main__':
     #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=100)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
-    vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4), loss=[None], run_eagerly=False)
+    vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5), loss=[None], run_eagerly=False)
 
     # train the model
     vae.fit(train_set, validation_data=test_set, epochs=1000, verbose=0,

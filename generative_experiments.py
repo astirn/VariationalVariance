@@ -35,7 +35,7 @@ METHODS = [
 
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
-     'kwargs': {'split_decoder': True,  'b': 1e-3}},
+     'kwargs': {'split_decoder': True,  'a': 1.0, 'b': 1e-3}},
     {'name': 'Student-VAE', 'mdl': StudentVAE,
      'kwargs': {'min_dof': 3}},
 
