@@ -166,4 +166,4 @@ def champions_club_table(champion_clubs):
                 champions_club.loc[index, col] = '\\textbf{' + row[col] + '}'
             else:
                 champions_club.loc[index, col] = row[col]
-    return champions_club.T.to_latex(escape=False)
+    return organize_regression_table(champions_club).T.to_latex(escape=False)
