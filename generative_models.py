@@ -436,7 +436,7 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
         VAE.__init__(self, dim_x, dim_z, architecture, batch_norm, num_mc_samples)
         VariationalVariance.__init__(self, int(np.prod(dim_x)), prior_type, prior_fam='Gamma', **kwargs)
         assert min_dof >= 0
-        assert prior_type in {'MLE', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
+        assert prior_type in {'VAP', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}
 
         # save configuration
         self.min_dof = min_dof
@@ -498,7 +498,7 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
     def posterior_predictive(self, mu, alpha, beta):
         components = []
         for m, a, b in zip(tf.unstack(mu), tf.unstack(alpha), tf.unstack(beta)):
-            p = tfp.distributions.StudentT(df=2 * a + self.min_dof, loc=m, scale=tf.sqrt(b / a))
+            p = tfp.distributions.StudentT(df=2 * a, loc=m, scale=tf.sqrt(b / a))
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
         return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
