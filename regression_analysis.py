@@ -170,7 +170,7 @@ def uci_regression_analysis():
         table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
         print(table, file=f)
     with open(os.path.join('assets', 'regression_uci_rmse.tex'), 'w') as f:
-        table, rmse_cc = build_table(results, 'Mean RMSL2', 'min', max_cols, bold_statistical_ties=False)
+        table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
         print(table, file=f)
     with open(os.path.join('assets', 'regression_uci_var_bias.tex'), 'w') as f:
         table, var_bias_cc = build_table(results, 'Var Bias', 'min', max_cols, bold_statistical_ties=False)
