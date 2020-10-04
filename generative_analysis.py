@@ -11,33 +11,6 @@ from scipy.stats import ttest_ind_from_stats
 from generative_experiments import METHODS
 
 
-def raw_result_table(pickle_files, main_body):
-
-    # aggregate raw results into a table
-    raw_table = []
-    for result in pickle_files:
-
-        # load logger
-        log = pd.read_pickle(result)
-
-        # assign experiment name
-        log['Data'] = result.split('generative_')[-1].split('_metrics')[0]
-
-        # append experiment to results table
-        raw_table.append(log)
-
-    # concatenate and clean up table
-    raw_table = pd.concat(raw_table)
-    raw_table = raw_table.drop(['Entropy'], axis=1)
-    raw_table = raw_table[raw_table.Method != 'EB-MAP-VAE']
-    raw_table = raw_table[raw_table.Method != 'EB-V3AE-Gamma']
-    if main_body:
-        raw_table = raw_table[raw_table.BatchNorm == False]
-        raw_table = raw_table.drop(['BatchNorm'], axis=1)
-
-    return raw_table
-
-
 def string_table(df):
     for col in df.columns:
         df[col] = df[col].apply(lambda x: '{:.2f}'.format(x) if abs(x) > 0.1 else '{:.1e}'.format(x))
@@ -104,7 +77,7 @@ def generative_tables(results, bold_statistical_ties):
     df.Method = pd.Categorical(df.Method, categories=[method['name'] for method in METHODS])
     df = df.sort_values('Method')
     df = df.set_index(keys=['Dataset', 'Method']).sort_index()
-
+    df = df[['LL', 'Mean RMSE', 'Var Bias', 'Sample RMSE']]
     return df.to_latex(escape=False)
 
 
