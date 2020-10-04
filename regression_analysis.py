@@ -143,6 +143,10 @@ def toy_regression_analysis():
     fig.savefig(os.path.join('assets', 'fig_toy.pdf'))
 
 
+def drop_detlefsen(df, **kwargs):
+    return df[df.Algorithm != 'Detlefsen']
+
+
 def uci_regression_analysis():
 
     # experiment directory
@@ -169,8 +173,7 @@ def uci_regression_analysis():
         table, rmse_cc = build_table(results, 'Mean RMSL2', 'min', max_cols, bold_statistical_ties=False)
         print(table, file=f)
     with open(os.path.join('assets', 'regression_uci_var_bias.tex'), 'w') as f:
-        table, var_bias_cc = build_table(results, 'Var Bias', 'min', max_cols, process_fn=[drop_detlefsen],
-                                         bold_statistical_ties=False)
+        table, var_bias_cc = build_table(results, 'Var Bias', 'min', max_cols, bold_statistical_ties=False)
         print(table, file=f)
 
     # print champions club

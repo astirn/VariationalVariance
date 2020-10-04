@@ -1,8 +1,7 @@
 import os
 import pickle
-import numpy as np
 import pandas as pd
-from scipy.stats import ttest_ind_from_stats
+from scipy.stats import ks_2samp
 
 
 def make_clean_method_names(df):
@@ -14,6 +13,24 @@ def make_clean_method_names(df):
     # make clean method names for report
     df['Method'] = df['Algorithm'] + df['Prior'].apply(lambda s: '' if s == 'N/A' else ' (' + s + ')')
     return df
+
+
+def string_table(df):
+    for col in df.columns:
+        df[col] = df[col].apply(lambda x: '{:.2f}'.format(x) if 0.01 < abs(x) < 100 else '{:.1e}'.format(x))
+    return df
+
+
+def organize_regression_table(table):
+    """
+    :param table: data frame to organize
+    :return: a data frame in (Algorithm, Prior) indices sorted according to desired manuscript ordering
+    """
+    table = table.reset_index()
+    table.Algorithm = pd.Categorical(table.Algorithm, categories=['Detlefsen', 'Normal', 'Student', 'Gamma-Normal'])
+    table.Prior = pd.Categorical(table.Prior, categories=['N/A', 'VAP', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'])
+    table = table.sort_values(['Algorithm', 'Prior'])
+    return table.set_index(keys=['Algorithm', 'Prior']).sort_index()
 
 
 def build_table(results, metric, order, max_cols, bold_statistical_ties, process_fn=None, transpose=False):
@@ -51,60 +68,53 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
         # compute means and standard deviations over methods
         log = log.convert_dtypes()
         mean = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].mean())
-        mean = mean.rename(columns={metric: 'mean'}).sort_values(['Algorithm', 'Prior'])
+        mean = mean.rename(columns={metric: exp}).sort_values(['Algorithm', 'Prior'])
         std = pd.DataFrame(log.groupby(['Algorithm', 'Prior'], sort=False)[metric].std(ddof=1))
-        std = std.rename(columns={metric: 'std'}).sort_values(['Algorithm', 'Prior'])
+        std = std.rename(columns={metric: exp}).sort_values(['Algorithm', 'Prior'])
+        log = log.set_index(keys=['Algorithm', 'Prior']).sort_index()
 
         # initialize champions club if needed
         if champions_club is None:
             champions_club = mean.copy(deep=True)
             champions_club[metric + ' Hard Wins'] = 0
             champions_club[metric + ' Soft Wins'] = 0
-            del champions_club['mean']
+            del champions_club[exp]
 
         # build table
-        df = pd.DataFrame(mean['mean'].round(3).astype('str') + '$\\pm$' + std['std'].round(3).astype('str'),
-                          columns=[exp])
+        df = string_table(mean.copy(deep=True)) + '$\\pm$' + string_table(std.copy(deep=True))
 
         # get index of top performer, using numpy arg min/max is ok since only one dataset in mean table
-        i_best = np.nanargmax(mean) if order == 'max' else np.nanargmin(mean.abs())
+        i_best = mean.idxmax(skipna=True) if order == 'max' else mean.abs().idxmin()
 
         # bold winner and update hard wins count
-        df.loc[mean.index[i_best]] = '\\textbf{' + df.loc[mean.index[i_best]] + '}'
-        champions_club.loc[mean.index[i_best], metric + ' Hard Wins'] += 1
+        df.loc[i_best] = '\\textbf{' + df.loc[i_best] + '}'
+        champions_club.loc[i_best, metric + ' Hard Wins'] += 1
 
         # get null hypothesis
-        null_mean = mean.T[mean.T.columns[i_best]][0]
-        null_std = std.T[std.T.columns[i_best]][0]
+        null_samples = log.loc[i_best][metric].to_numpy()
 
         # compute p-values
-        ms = zip([m[0] for m in mean.to_numpy().tolist()], [s[0] for s in std.to_numpy().tolist()])
-        p = [ttest_ind_from_stats(null_mean, null_std, n_trials, m, s, n_trials, False)[-1] for (m, s) in ms]
+        p = [ks_2samp(null_samples, log.loc[i][metric].to_numpy(), mode='exact')[-1] for i in log.index.unique()]
 
         # look for statistical ties
         if order is not None:
-            for i in range(df.shape[0]):
+            for i, index in enumerate(log.index.unique()):
                 if p[i] >= 0.05:
                     # update soft wins count
-                    champions_club.loc[mean.index[i], metric + ' Soft Wins'] += 1
+                    champions_club.loc[index, metric + ' Soft Wins'] += 1
 
                     # bold statistical ties if requested
                     if bold_statistical_ties:
-                        df.loc[mean.index[i]] = '\\textbf{' + df.loc[mean.index[i]] + '}'
+                        df.loc[index] = '\\textbf{' + df.loc[index] + '}'
 
         # append experiment to results table
         table = df if table is None else table.join(df)
 
         # build test table for viewing with PyCharm SciView
-        mean = mean.rename(columns={'mean': exp})
         test_table = mean if test_table is None else test_table.join(mean)
 
     # make the table pretty
-    table = table.reset_index()
-    table.Algorithm = pd.Categorical(table.Algorithm, categories=['Detlefsen', 'Normal', 'Student', 'Gamma-Normal'])
-    table.Prior = pd.Categorical(table.Prior, categories=['N/A', 'VAP', 'Standard', 'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'])
-    table = table.sort_values(['Algorithm', 'Prior'])
-    table = table.set_index(keys=['Algorithm', 'Prior']).sort_index()
+    table = organize_regression_table(table)
     if transpose:
         return table.T.to_latex(escape=False)
 
