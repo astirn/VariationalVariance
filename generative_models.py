@@ -380,8 +380,10 @@ class StudentVAE(VAE):
 
         # decoder
         self.mu = decoder(dim_z, dim_out, batch_norm, final_activation=None, name='mu_x')
-        self.nu = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='nu_x')
-        self.sigma = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='sigma_x')
+        self.nu_network = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='nu_x')
+        self.nu = lambda z: self.nu_network(z) + self.min_dof
+        self.sigma_network = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='sigma_x')
+        self.sigma = lambda z: self.sigma_network(z) + 1e-6
 
     def z_dependent_parameters(self, z_samples):
 
@@ -397,7 +399,7 @@ class StudentVAE(VAE):
         return mu, nu, sigma
 
     def likelihood(self, mu, nu, sigma):
-        px = tfp.distributions.StudentT(df=nu + self.min_dof, loc=mu, scale=sigma)
+        px = tfp.distributions.StudentT(df=nu, loc=mu, scale=sigma)
         return tfp.distributions.Independent(px, reinterpreted_batch_ndims=1)
 
     def variational_objective(self, x, qz_x):
@@ -425,7 +427,7 @@ class StudentVAE(VAE):
     def posterior_predictive(self, mu, nu, sigma):
         components = []
         for m, n, s in zip(tf.unstack(mu), tf.unstack(nu), tf.unstack(sigma)):
-            p = tfp.distributions.StudentT(df=n + self.min_dof, loc=m, scale=s)
+            p = tfp.distributions.StudentT(df=n, loc=m, scale=s)
             components.append(tfp.distributions.Independent(p, reinterpreted_batch_ndims=1))
         return tfp.distributions.Mixture(cat=mixture_proportions(mu), components=components)
 
