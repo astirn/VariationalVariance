@@ -67,7 +67,7 @@ def build_table(results, metric, order, max_cols, bold_statistical_ties, process
                           columns=[exp])
 
         # get index of top performer, using numpy arg min/max is ok since only one dataset in mean table
-        i_best = np.argmax(mean) if order == 'max' else np.argmin(mean.abs())
+        i_best = np.nanargmax(mean) if order == 'max' else np.nanargmin(mean.abs())
 
         # bold winner and update hard wins count
         df.loc[mean.index[i_best]] = '\\textbf{' + df.loc[mean.index[i_best]] + '}'
