@@ -10,6 +10,10 @@ import tensorflow as tf
 from generative_data import load_data_set
 from generative_models import FixedVarianceNormalVAE, NormalVAE, StudentVAE, VariationalVarianceVAE, precision_prior_params
 
+# minimum DoF to produce well-defined variances
+MIN_DOF = 3.0
+assert MIN_DOF > 2
+
 # dictionary of methods to test
 METHODS = [
     # Fixed Variance VAE baselines
@@ -35,18 +39,19 @@ METHODS = [
 
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
-     'kwargs': {'split_decoder': True,  'a': 1.0, 'b': 1e-3}},
+     'kwargs': {'split_decoder': True,  'a': MIN_DOF, 'b': 1e-3 * (MIN_DOF - 1)}},
     {'name': 'Student-VAE', 'mdl': StudentVAE,
-     'kwargs': {'min_dof': 3}},
+     'kwargs': {'min_dof': MIN_DOF}},
 
     # Our Methods
     {'name': 'V3AE-VAP', 'mdl': VariationalVarianceVAE,
-     'kwargs': {'min_dof': 3, 'prior_type': 'VAP'}},
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VAP'}},
     {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
-     'kwargs': {'min_dof': 3, 'prior_type': 'Standard', 'a': 1.0, 'b': 1e-3}},
-    # TODO: define more of these!
-    # {'name': 'V3AE-xVAMP*', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'min_dof': 0, 'prior_type': 'xVAMP*'}},
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'Standard', 'a': MIN_DOF, 'b': 1e-3 * (MIN_DOF - 1)}},
+    # {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
+    #  'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM'}},
+    # {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
+    #  'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM*', 'k': 10}},
 ]
 
 # latent dimension per data set
@@ -143,7 +148,7 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
             print(dataset, method['name'], 'trial = {:d}'.format(t + 1), file=open(nan_file, 'a'))
 
         # retrieve best attained posterior predictive log likelihood on the validation data
-        i_best = np.argmax(hist.history['val_LPPL'])
+        i_best = np.nanargmax(hist.history['val_LPPL'])
         lppl = hist.history['val_LPPL'][i_best]
 
         # log scalar performance metrics
