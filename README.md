@@ -63,11 +63,6 @@ UCI regression log likelihoods reported as mean±std. We bold the top performer 
 any others who are statistically indistinguishable (p ≥ 0.05). Tuples below experiment names are of
 the form (# of observations , dim(x), dim(y))
 
-### Active Learning
-![UCI Regression Results](assets/fig_al_ll.png)
-Log likelihoods across active learning steps for UCI data sets. The x axis is the ratio of
-utilized training data to the available. Darker lines are means. Areas cover ± 1 standard deviation.
-
 ### Deep Latent Variable Models (VAEs)
 ![UCI Regression Results](assets/fig_vae_samples_mnist.png)
 VAE posterior predictive checks for MNIST. The rows within a subplot from top to bottom are randomly selected
@@ -77,9 +72,6 @@ Takahashi et al. (2018). The fourth is our control. Our method (bottom) has the 
 
 ![UCI Regression Results](assets/fig_vae_samples_fashion_mnist.png)
 VAE posterior predictive checks for Fashion MNIST. Same arrangement as above.
-
-![UCI Regression Results](assets/fig_vae_samples_svhn_cropped.png)
-VAE posterior predictive checks for SVHN. Same arrangement as above.
 
 ## Contributing
 
