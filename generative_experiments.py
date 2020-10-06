@@ -56,8 +56,8 @@ METHODS = [
      'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'xVAMP'}},
     {'name': 'V3AE-xVAMP*', 'mdl': VariationalVarianceVAE,
      'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'xVAMP*'}},
-    # {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM'}},
+    {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM'}},
     {'name': 'V3AE-VBEM*', 'mdl': VariationalVarianceVAE,
      'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM*', 'k': 10}},
 ]
