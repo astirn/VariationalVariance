@@ -11,7 +11,7 @@ from utils_model import softplus_inverse, expected_log_normal, monte_carlo_stude
 from callbacks import RegressionCallback
 from regression_data import generate_toy_data
 
-# workaround: https://github.com/tensorflow/tensorflow/issues/34888
+# configure GPUs
 for gpu in tf.config.list_physical_devices('GPU'):
     tf.config.experimental.set_memory_growth(gpu, enable=True)
 tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')

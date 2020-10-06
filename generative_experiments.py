@@ -68,7 +68,7 @@ ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'con
 NUM_MC_SAMPLES = 20
 
 
-def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
+def run_vae_experiments(method, dataset, num_trials, mode):
 
     # establish experiment directory
     experiment_dir = 'vae'
@@ -143,9 +143,7 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
         kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
                        'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
 
-        # configure and compile with selected distribution strategy
-        # strategy = tf.distribute.MirroredStrategy() if multi_gpu else tf.distribute.OneDeviceStrategy('/GPU:0')
-        # with strategy.scope():
+        # configure and compile model
         mdl = method['mdl'](**kwargs)
         mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5, clipvalue=clip_value), loss=[None])
 
@@ -222,26 +220,15 @@ if __name__ == '__main__':
     parser.add_argument('--num_trials', type=int, default=5, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
-    parser.add_argument('--multi_gpu', default=0, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
 
     # check inputs
     assert args.dataset in DIM_Z.keys()
     assert args.mode in {'replace', 'resume'}
 
-    # configure GPUs
-    if not args.multi_gpu:
-        for gpu in tf.config.list_physical_devices('GPU'):
-            tf.config.experimental.set_memory_growth(gpu, enable=True)
-        tf.config.experimental.set_visible_devices(tf.config.list_physical_devices('GPU')[0], 'GPU')
-
     # make result directory if it doesn't already exist
     os.makedirs('results', exist_ok=True)
 
     # run experiments accordingly
     for m in METHODS:
-        run_vae_experiments(method=m,
-                            dataset=args.dataset,
-                            num_trials=args.num_trials,
-                            mode=args.mode,
-                            multi_gpu=args.multi_gpu)
+        run_vae_experiments(method=m, dataset=args.dataset, num_trials=args.num_trials, mode=args.mode)
