@@ -451,8 +451,12 @@ class VariationalVarianceVAE(VAE, VariationalVariance):
         self.mu = decoder(dim_z, dim_out, batch_norm, final_activation=None, name='mu_x')
         self.alpha_network = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='alpha_x')
         self.alpha = lambda x: self.alpha_network(x) + self.min_dof / 2
-        self.beta = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='beta_x')
-        if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
+        self.beta_network = decoder(dim_z, dim_out, batch_norm, final_activation='softplus', name='beta_x')
+        if self.prior_type in {'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
+            self.beta = lambda x: self.beta_network(x) + 1e-3
+        else:
+            self.beta = lambda x: self.beta_network(x)
+        if self.prior_type in {'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'} and self.u.shape[0] > 1:
             self.pi = mixture_network(dim_z, self.u.shape[0], batch_norm, name='pi')
 
     def z_dependent_parameters(self, z_samples):

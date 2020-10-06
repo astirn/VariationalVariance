@@ -48,10 +48,18 @@ METHODS = [
      'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VAP'}},
     {'name': 'V3AE-Gamma', 'mdl': VariationalVarianceVAE,
      'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'Standard', 'a': MIN_DOF, 'b': 1e-3 * (MIN_DOF - 1)}},
-    # {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM'}},
-    # {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
-    #  'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM*', 'k': 10}},
+    {'name': 'V3AE-VAMP', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VAMP'}},
+    {'name': 'V3AE-VAMP*', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VAMP*'}},
+    {'name': 'V3AE-xVAMP', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'xVAMP'}},
+    {'name': 'V3AE-xVAMP*', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'xVAMP*'}},
+    {'name': 'V3AE-VBEM', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM'}},
+    {'name': 'V3AE-VBEM*', 'mdl': VariationalVarianceVAE,
+     'kwargs': {'min_dof': MIN_DOF, 'prior_type': 'VBEM*', 'k': 10}},
 ]
 
 # latent dimension per data set
@@ -70,9 +78,9 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
     os.makedirs(os.path.join('results', experiment_dir, dataset), exist_ok=True)
 
     # create full file names
-    logger_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_metrics.pkl')
-    plotter_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_plots.pkl')
-    nan_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_nan_log.txt')
+    logger_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_metrics.pkl').replace('*', 't')
+    plotter_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_plots.pkl').replace('*', 't')
+    nan_file = os.path.join('results', experiment_dir, dataset, method['name'] + '_nan_log.txt').replace('*', 't')
 
     # load results if we are resuming
     if mode == 'resume' and os.path.exists(logger_file) and os.path.exists(plotter_file):
@@ -94,8 +102,16 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
         t_start = -1
 
     # common configurations
-    batch_size = 250
-    epochs = 1000
+    if method['kwargs'].get('prior_type') in {'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
+        batch_size = 125
+        epochs = 500
+        patience = 25
+        clip_value = 5.0
+    else:
+        batch_size = 250
+        epochs = 100
+        patience = 50
+        clip_value = None
 
     # load data
     train_set, test_set, info = load_data_set(data_set_name=dataset, px_family='Normal', batch_size=batch_size)
@@ -128,10 +144,10 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
                        'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
 
         # configure and compile with selected distribution strategy
-        strategy = tf.distribute.MirroredStrategy() if multi_gpu else tf.distribute.OneDeviceStrategy('/GPU:0')
-        with strategy.scope():
-            mdl = method['mdl'](**kwargs)
-            mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5), loss=[None])
+        # strategy = tf.distribute.MirroredStrategy() if multi_gpu else tf.distribute.OneDeviceStrategy('/GPU:0')
+        # with strategy.scope():
+        mdl = method['mdl'](**kwargs)
+        mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5, clipvalue=clip_value), loss=[None])
 
         # train
         hist = mdl.fit(train_set, validation_data=test_set, epochs=epochs, verbose=1,
@@ -139,7 +155,7 @@ def run_vae_experiments(method, dataset, num_trials, mode, multi_gpu):
                        callbacks=[tf.keras.callbacks.TerminateOnNaN(),
                                   tf.keras.callbacks.EarlyStopping(monitor='val_LPPL',
                                                                    min_delta=0.5,
-                                                                   patience=50,
+                                                                   patience=patience,
                                                                    mode='max',
                                                                    restore_best_weights=True)])
         # print and log NaNs

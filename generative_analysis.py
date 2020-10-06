@@ -106,7 +106,8 @@ def generative_plots(experiment_dir, results):
             i += 1
 
             # load plot data
-            with open(os.path.join(experiment_dir, dataset.replace(' ', '_'), method + '_plots.pkl'), 'rb') as f:
+            plot_file = method.replace('*', 't') + '_plots.pkl'
+            with open(os.path.join(experiment_dir, dataset.replace(' ', '_'), plot_file), 'rb') as f:
                 plots = pickle.load(f)
 
             # grab original data
