@@ -1,4 +1,5 @@
 import os
+import sys
 import copy
 import pickle
 import argparse
@@ -9,6 +10,10 @@ import tensorflow as tf
 
 from generative_data import load_data_set
 from generative_models import FixedVarianceNormalVAE, NormalVAE, StudentVAE, VariationalVarianceVAE, precision_prior_params
+
+# import Detlefsen baseline model
+sys.path.append(os.path.join(os.getcwd(), 'john-master'))
+from experiment_vae import detlefsen_vae_baseline
 
 # minimum DoF to produce well-defined variances
 MIN_DOF = 3.0
@@ -35,7 +40,7 @@ METHODS = [
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
 
     # Detlefsen Baseline
-    # TODO: implement this!
+    {'name': 'Detlefsen', 'kwargs': dict()},
 
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
@@ -138,73 +143,91 @@ def run_vae_experiments(method, dataset, num_trials, mode):
                                                   num_classes=info.features['label'].num_classes,
                                                   pseudo_inputs_per_class=10)[-1]
 
-        # update kwargs accordingly
-        kwargs = copy.deepcopy(method['kwargs'])
-        kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
-                       'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
+        # baselines with separate code bases
+        if method['name'] == 'Detlefsen':
 
-        # configure and compile model
-        mdl = method['mdl'](**kwargs)
-        mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5, clipvalue=clip_value), loss=[None])
+            # run detlefsen baseline
+            x_train = np.concatenate([x['image'] for x in train_set.as_numpy_iterator()], axis=0)
+            x_test = np.concatenate([x['image'] for x in test_set.as_numpy_iterator()], axis=0)
+            hist = None
+            metrics, reconstruction = detlefsen_vae_baseline(x_train=x_train, x_test=x_test, x_plot=plotter['x'],
+                                                             dim_z=DIM_Z[dataset], epochs=epochs, batch_size=batch_size)
+            metrics.update({'Method': method['name']})
 
-        # train
-        hist = mdl.fit(train_set, validation_data=test_set, epochs=epochs, verbose=1,
-                       validation_steps=np.ceil(info.splits['test'].num_examples // batch_size),
-                       callbacks=[tf.keras.callbacks.TerminateOnNaN(),
-                                  tf.keras.callbacks.EarlyStopping(monitor='val_LPPL',
-                                                                   min_delta=0.5,
-                                                                   patience=patience,
-                                                                   mode='max',
-                                                                   restore_best_weights=True)])
-        # print and log NaNs
-        if sum(np.isnan(hist.history['loss'])):
-            print('**** NaN Detected ****')
-            print(dataset, method['name'], 'trial = {:d}'.format(t + 1), file=open(nan_file, 'a'))
+        # otherwise run our methods
+        else:
 
-        # retrieve best attained posterior predictive log likelihood on the validation data
-        i_best = np.nanargmax(hist.history['val_LPPL'])
-        lppl = hist.history['val_LPPL'][i_best]
+            # update kwargs accordingly
+            kwargs = copy.deepcopy(method['kwargs'])
+            kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
+                           'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
 
-        # log scalar performance metrics
-        num_pixels = 0
-        mean_bias = 0
-        mean_mse = 0
-        var_bias = 0
-        var_mse = 0
-        sample_bias = 0
-        sample_mse = 0
-        for batch in test_set:
-            x_mean, x_std, x_new = mdl.posterior_predictive_checks(batch['image'])
-            num_pixels += np.prod(batch['image'].shape)
-            mean_residuals = x_mean - batch['image']
-            mean_bias += tf.reduce_sum(mean_residuals)
-            mean_mse += tf.reduce_sum(mean_residuals ** 2)
-            var_residuals = x_std ** 2 - mean_residuals ** 2
-            var_bias += tf.reduce_sum(var_residuals)
-            var_mse += tf.reduce_sum(var_residuals ** 2)
-            sample_residuals = x_new - batch['image']
-            sample_bias += tf.reduce_sum(sample_residuals)
-            sample_mse += tf.reduce_sum(sample_residuals ** 2)
-        mean_bias /= num_pixels
-        mean_mse /= num_pixels
-        var_bias /= num_pixels
-        var_mse /= num_pixels
-        sample_bias /= num_pixels
-        sample_mse /= num_pixels
+            # configure and compile model
+            mdl = method['mdl'](**kwargs)
+            mdl.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5, clipvalue=clip_value), loss=[None])
+
+            # train
+            hist = mdl.fit(train_set, validation_data=test_set, epochs=epochs, verbose=1,
+                           validation_steps=np.ceil(info.splits['test'].num_examples // batch_size),
+                           callbacks=[tf.keras.callbacks.TerminateOnNaN(),
+                                      tf.keras.callbacks.EarlyStopping(monitor='val_LPPL',
+                                                                       min_delta=0.5,
+                                                                       patience=patience,
+                                                                       mode='max',
+                                                                       restore_best_weights=True)])
+            # print and log NaNs
+            if sum(np.isnan(hist.history['loss'])):
+                print('**** NaN Detected ****')
+                print(dataset, method['name'], 'trial = {:d}'.format(t + 1), file=open(nan_file, 'a'))
+
+            # retrieve best attained posterior predictive log likelihood on the validation data
+            i_best = np.nanargmax(hist.history['val_LPPL'])
+            lppl = hist.history['val_LPPL'][i_best]
+
+            # log scalar performance metrics
+            num_pixels = 0
+            mean_bias = 0
+            mean_mse = 0
+            var_bias = 0
+            var_mse = 0
+            sample_bias = 0
+            sample_mse = 0
+            for batch in test_set:
+                x_mean, x_std, x_new = mdl.posterior_predictive_checks(batch['image'])
+                num_pixels += np.prod(batch['image'].shape)
+                mean_residuals = x_mean - batch['image']
+                mean_bias += tf.reduce_sum(mean_residuals)
+                mean_mse += tf.reduce_sum(mean_residuals ** 2)
+                var_residuals = x_std ** 2 - mean_residuals ** 2
+                var_bias += tf.reduce_sum(var_residuals)
+                var_mse += tf.reduce_sum(var_residuals ** 2)
+                sample_residuals = x_new - batch['image']
+                sample_bias += tf.reduce_sum(sample_residuals)
+                sample_mse += tf.reduce_sum(sample_residuals ** 2)
+            mean_bias /= num_pixels
+            mean_mse /= num_pixels
+            var_bias /= num_pixels
+            var_mse /= num_pixels
+            sample_bias /= num_pixels
+            sample_mse /= num_pixels
+
+            # assemble metric and reconstruction dictionaries
+            metrics = {'Method': method['name'], 'LL': lppl, 'Best Epoch': i_best + 1,
+                       'Mean Bias': mean_bias.numpy(), 'Mean RMSE': mean_mse.numpy() ** 0.5,
+                       'Var Bias': var_bias.numpy(), 'Var RMSE': var_mse.numpy() ** 0.5,
+                       'Sample Bias': sample_bias.numpy(), 'Sample RMSE': sample_mse.numpy() ** 0.5}
+            x_mean, x_std, x_new = mdl.posterior_predictive_checks(x=plotter['x'])
+            reconstruction = {'mean': x_mean, 'std': x_std, 'sample': x_new}
 
         # log/print scalar metrics
-        new_df = pd.DataFrame(data={'Method': method['name'], 'LL': lppl, 'Best Epoch': i_best + 1,
-                                    'Mean Bias': mean_bias.numpy(), 'Mean RMSE': mean_mse.numpy() ** 0.5,
-                                    'Var Bias': var_bias.numpy(), 'Var RMSE': var_mse.numpy() ** 0.5,
-                                    'Sample Bias': sample_bias.numpy(), 'Sample RMSE': sample_mse.numpy() ** 0.5},
-                              index=[t])
+        new_df = pd.DataFrame(data=metrics, index=[t])
         logger = logger.append(new_df)
         print(new_df.to_string())
 
-        # save plot data
-        x_mean, x_std, x_new = mdl.posterior_predictive_checks(x=plotter['x'])
-        plotter['training'].append(hist.history)
-        plotter['reconstruction'].append({'mean': x_mean, 'std': x_std, 'sample': x_new})
+        # save training history and plot data
+        if hist is not None:
+            plotter['training'].append(hist.history)
+        plotter['reconstruction'].append(reconstruction)
 
         # save results after each trial
         logger.to_pickle(logger_file)

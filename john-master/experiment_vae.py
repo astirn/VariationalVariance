@@ -14,6 +14,8 @@ from torch import nn
 # from torchvision.utils import save_image
 from utils import get_image_dataset
 from torch import distributions as D
+import tensorflow as tf
+import tensorflow_probability as tfp
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
@@ -321,12 +323,8 @@ class john(basemodel):
             alpha = self.alpha(z)
             beta = self.beta(z)
             gamma_dist = D.Gamma(alpha+1e-6, beta+1e-6)
-            if self.training:
-                samples_var = gamma_dist.rsample([20])
-                x_var = (1.0/(samples_var+1e-6))
-            else:
-                samples_var = gamma_dist.rsample([50])
-                x_var = (1.0/(samples_var+1e-6)).mean(dim=0)
+            samples_var = gamma_dist.rsample([20])
+            x_var = (1.0/(samples_var+1e-6))
             x_var = (1-s) * x_var + s*(10*torch.ones_like(x_var))
         else:
             x_var = (0.02**2)*torch.ones_like(x_mu)
@@ -356,7 +354,6 @@ class john(basemodel):
         batches = batchify(Xtrain, batch_size = batch_size, shuffel=True)
         local_batches = local_batchify(Xtrain)
         progressBar = tqdm(desc='training', total=n_iters, unit='iter')
-        loss, var = [[ ],[ ],[ ]], [ ]
         x_plot = torch.tensor(Xplot).to(torch.float32).to(self.device)
         ll_best = -np.inf
         epoch_best = np.inf
@@ -387,12 +384,12 @@ class john(basemodel):
                 elbo, logpx, kl, x_mu, x_var, z, z_mu, z_var = self.forward(x, anneling)
                 if self.opt_switch % 2 == 0:
                     optimizer2.zero_grad()
-                    elbo = t_likelihood(x, x_mu, x_var, mean_w) / Xtrain.shape[0] - kl.mean()
+                    elbo = t_likelihood(x, x_mu, x_var, mean_w) - kl.mean()
                     (-elbo).backward()
                     optimizer2.step()
                 else:
                     optimizer3.zero_grad()
-                    elbo = t_likelihood(x, x_mu, x_var, mean_w) / Xtrain.shape[0] - kl.mean()
+                    elbo = t_likelihood(x, x_mu, x_var, var_w) - kl.mean()
                     (-elbo).backward()
                     optimizer3.step()
                 
@@ -400,41 +397,78 @@ class john(basemodel):
                 
             progressBar.update()
             progressBar.set_postfix({'elbo': (-elbo).item(), 'x_var': x_var.mean().item(), 'anneling': anneling})
-            # loss[0].append((-elbo).item())
-            # loss[1].append(log_px.mean().item())
-            # loss[2].append(kl.mean().item())
-            # var.append(x_var.mean().item())
 
-            if it % its_per_epoch == 0:
+            # epoch complete and in second phase of training (i.e. fitting variance)
+            if it % its_per_epoch == 0 and self.switch:
                 self.eval()
                 with torch.no_grad():
+
+                    # initialize containers
                     ll = []
-                    mean_x = []
-                    var_x = []
+                    mean_residuals = []
+                    var_residuals = []
+                    sample_residuals = []
+
+                    # loop over batches
                     for i in range(int(np.ceil(x_test.shape[0] / batch_size))):
+
+                        # run Detlefsen network
                         i_start = i * batch_size
                         i_end = min((i + 1) * batch_size, x_test.shape[0])
                         x = torch.tensor(x_test[i_start:i_end]).to(torch.float32).to(self.device)
-                        _, l, _, m, v, _, _, _ = self.forward(x, anneling)
-                        ll.append(l.cpu().numpy())
-                        mean_x.append(m.cpu().numpy())
-                        var_x.append(v.cpu().numpy())
-                    ll = np.mean(np.concatenate(ll))
-                    mean_x = np.concatenate(mean_x, axis=0)
-                    var_x = np.concatenate(var_x, axis=0)
-                    print('\nEpoch {:d}/{:d}: LL = {:.4f}'.format(it // its_per_epoch, n_iters // its_per_epoch, ll))
+                        _, _, _, mu_x, sigma2_x, _, _, _ = self.forward(x, anneling)
+                        mean = mu_x.cpu().numpy()
+                        variance = sigma2_x.cpu().numpy()
+
+                        # create p(x|x): a uniform mixture of Normals over the variance samples
+                        components = []
+                        for v in tf.unstack(variance):
+                            normal = tfp.distributions.Normal(loc=mean, scale=v ** 0.5)
+                            components.append(tfp.distributions.Independent(normal, reinterpreted_batch_ndims=1))
+                        cat = tfp.distributions.Categorical(logits=tf.ones((variance.shape[1], variance.shape[0])))
+                        px_x = tfp.distributions.Mixture(cat=cat, components=components)
+
+                        # append results
+                        x = x.cpu().numpy()
+                        ll.append(px_x.log_prob(x))
+                        mean_residuals.append(px_x.mean() - x)
+                        var_residuals.append(px_x.variance() - mean_residuals[-1] ** 2)
+                        sample_residuals.append(px_x.sample() - x)
+
+                    # if mean likelihood is new best
+                    ll = tf.reduce_mean(tf.concat(ll, axis=0)).numpy()
                     if ll > ll_best and it > n_iters * 0.6:
+
+                        # record best ll
                         ll_best = ll
-                        px = D.Independent(D.Normal(torch.tensor(mean_x).to(torch.float32).to(self.device),
-                                                    torch.tensor(var_x ** 0.5).to(torch.float32).to(self.device)), 1)
-                        rmse_best = np.sqrt(np.mean((x_test - px.sample().cpu().numpy()) ** 2))
-                        h_best = px.entropy().mean().item()
-                        epoch_best = it // its_per_epoch
-                        _, _, _, mean_x, var_x, _, _, _ = self.forward(x_plot, anneling)
-                        px = D.Independent(D.Normal(mean_x, var_x ** 0.5), 1)
-                        mean_best = mean_x.cpu().numpy()
-                        var_best = var_x.cpu().numpy()
-                        sample_best = px.sample().cpu().numpy()
+
+                        # compute metrics
+                        metrics = {'LL': ll_best,
+                                   'Best Epoch': it // its_per_epoch,
+                                   'Mean Bias': tf.reduce_mean(tf.concat(mean_residuals, axis=0)).numpy(),
+                                   'Mean RMSE': tf.sqrt(tf.reduce_mean(tf.concat(mean_residuals, axis=0) ** 2)).numpy(),
+                                   'Var Bias': tf.reduce_mean(tf.concat(var_residuals, axis=0)).numpy(),
+                                   'Var RMSE': tf.sqrt(tf.reduce_mean(tf.concat(var_residuals, axis=0) ** 2)).numpy(),
+                                   'Sample Bias': tf.reduce_mean(tf.concat(sample_residuals, axis=0)).numpy(),
+                                   'Sample RMSE': tf.sqrt(tf.reduce_mean(tf.concat(sample_residuals, axis=0) ** 2)).numpy()}
+
+                        # get p(x|x) for the held-out plotting data
+                        _, _, _, mu_x, sigma2_x, _, _, _ = self.forward(x_plot, anneling)
+                        mean = mu_x.cpu().numpy()
+                        variance = sigma2_x.cpu().numpy()
+                        components = []
+                        for v in tf.unstack(variance):
+                            normal = tfp.distributions.Normal(loc=mean, scale=v ** 0.5)
+                            components.append(tfp.distributions.Independent(normal, reinterpreted_batch_ndims=1))
+                        cat = tfp.distributions.Categorical(logits=tf.ones((variance.shape[1], variance.shape[0])))
+                        px_x = tfp.distributions.Mixture(cat=cat, components=components)
+
+                        # save first two moments and samples for the plotting data
+                        reconstruction = {'mean': px_x.mean().numpy(),
+                                          'std': px_x.stddev().numpy(),
+                                          'sample': px_x.sample().numpy()}
+
+                    # early stop check
                     elif self.switch and it // its_per_epoch > epoch_best + 50:
                         print('Early Stop!')
                         break
@@ -442,7 +476,7 @@ class john(basemodel):
             it += 1
           
         progressBar.close()
-        return ll_best, rmse_best, h_best, mean_best, var_best, sample_best
+        return metrics, reconstruction
     
 #%%
 
@@ -455,15 +489,12 @@ def detlefsen_vae_baseline(x_train, x_test, x_plot, dim_z, epochs, batch_size):
     x_plot = np.reshape(x_plot, [x_plot.shape[0], -1])
     its_per_epoch = int(np.ceil(x_train.shape[0] / batch_size))
     iterations = its_per_epoch * epochs
-    ll_best, rmse_best, h_best, mean_best, var_best, sample_best = mdl.fit(Xtrain=x_train, x_test=x_test, Xplot=x_plot,
-                                                                           n_iters=iterations,
-                                                                           lr=1e-4,
-                                                                           batch_size=batch_size,
-                                                                           its_per_epoch=its_per_epoch)
-    mean_best = np.reshape(mean_best, [-1] + orig_shape[1:])
-    var_best = np.reshape(var_best, [-1] + orig_shape[1:])
-    sample_best = np.reshape(sample_best, [-1] + orig_shape[1:])
-    return ll_best, rmse_best, h_best, mean_best, var_best, sample_best
+    metrics, reconstruction = mdl.fit(Xtrain=x_train, x_test=x_test, Xplot=x_plot,
+                                      n_iters=iterations, lr=1e-4, batch_size=batch_size, its_per_epoch=its_per_epoch)
+    reconstruction['mean'] = np.reshape(reconstruction['mean'], [-1] + orig_shape[1:])
+    reconstruction['std'] = np.reshape(reconstruction['std'], [-1] + orig_shape[1:])
+    reconstruction['sample'] = np.reshape(reconstruction['sample'], [-1] + orig_shape[1:])
+    return metrics, reconstruction
 
 
 if __name__ == '__main__':
