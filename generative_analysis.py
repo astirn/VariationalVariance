@@ -22,6 +22,9 @@ def generative_tables(results, bold_statistical_ties):
     # drop non-reported columns
     results = results.drop(['Best Epoch'], axis=1)
 
+    # drop svhn results for now
+    results = results[results.Dataset != 'svhn cropped']  # TODO: remove this
+
     # get number of trials
     n_trials = max(results.index) + 1
 
@@ -58,20 +61,24 @@ def generative_tables(results, bold_statistical_ties):
             if n_trials >= 2 and bold_statistical_ties:
 
                 # get null hypothesis
-                null_mean = mean[mean.Dataset == dataset][metric].to_numpy()[i_best]
-                null_std = std[std.Dataset == dataset][metric].to_numpy()[i_best]
+                null_mean = mean.loc[i_best, metric]
+                null_std = std.loc[i_best, metric]
 
-                # compute p-values
-                m = [m for m in mean[mean.Dataset == dataset][metric].to_numpy().tolist()]
-                s = [s for s in std[std.Dataset == dataset][metric].to_numpy().tolist()]
-                ms = zip(m, s)
-                p = [ttest_ind_from_stats(null_mean, null_std, n_trials, m, s, n_trials, False)[-1] for (m, s) in ms]
+                # loop over the methods
+                for method in mean[mean.Dataset == dataset]['Method'].unique():
 
-                # bold statistical ties for best
-                for i in range(df.shape[0]):
-                    if p[i] >= 0.05:
-                        new_string = '\\textbf{' + df.loc[mean[metric].index[i], metric] + '}'
-                        df.loc[mean[metric].index[i], metric] = new_string
+                    # get index of method
+                    i_method = mean[(mean.Dataset == dataset) & (mean.Method == method)].index[0]
+
+                    # compute p-value
+                    method_mean = mean.loc[i_method, metric]
+                    method_std = std.loc[i_method, metric]
+                    p = ttest_ind_from_stats(null_mean, null_std, n_trials, method_mean, method_std, n_trials, False)[1]
+
+                    # bold statistical ties for best
+                    if p >= 0.05 and i_best != i_method:
+                        new_string = '\\textbf{' + df.loc[i_method, metric] + '}'
+                        df.loc[i_method, metric] = new_string
 
     # make the table pretty
     df.Method = pd.Categorical(df.Method, categories=[method['name'] for method in METHODS])
