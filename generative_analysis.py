@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
-from scipy.stats import ttest_ind_from_stats
+from scipy.stats import ttest_ind_from_stats, ks_2samp
 
 from generative_experiments import METHODS
 
@@ -17,7 +17,8 @@ def string_table(df):
     return df
 
 
-def generative_tables(results, bold_statistical_ties):
+def generative_tables(results, bold_statistical_ties, statistical_test):
+    assert statistical_test in {'Whelch', 'K-S'}
 
     # drop non-reported columns
     results = results.drop(['Best Epoch'], axis=1)
@@ -26,7 +27,7 @@ def generative_tables(results, bold_statistical_ties):
     results = results[results.Dataset != 'svhn cropped']  # TODO: remove this
 
     # get number of trials
-    n_trials = max(results.index) + 1
+    n = max(results.index) + 1
 
     # get means and standard deviations
     mean = pd.DataFrame(results.groupby(['Dataset', 'Method'], sort=False).mean())
@@ -34,7 +35,7 @@ def generative_tables(results, bold_statistical_ties):
 
     # build string table
     df = string_table(mean.copy(deep=True))
-    if n_trials >= 2:
+    if n >= 2:
         df += '$\\pm$' + string_table(std.copy(deep=True))
 
     # reset indices for dataset indexing
@@ -58,22 +59,26 @@ def generative_tables(results, bold_statistical_ties):
             df.loc[mean[metric].index[i_best], metric] = '\\textbf{' + df.loc[mean[metric].index[i_best], metric] + '}'
 
             # bold statistical ties if sufficient trials and requested
-            if n_trials >= 2 and bold_statistical_ties:
+            if n >= 2 and bold_statistical_ties:
 
                 # get null hypothesis
+                best_method = mean.loc[i_best, 'Method']
+                null_samples = results[(results.Dataset == dataset) & (results.Method == best_method)][metric]
                 null_mean = mean.loc[i_best, metric]
                 null_std = std.loc[i_best, metric]
 
                 # loop over the methods
-                for method in mean[mean.Dataset == dataset]['Method'].unique():
-
-                    # get index of method
-                    i_method = mean[(mean.Dataset == dataset) & (mean.Method == method)].index[0]
+                for i_method in mean[mean.Dataset == dataset].index:
 
                     # compute p-value
+                    method = mean.loc[i_method, 'Method']
+                    method_samples = results[(results.Dataset == dataset) & (results.Method == method)][metric]
                     method_mean = mean.loc[i_method, metric]
                     method_std = std.loc[i_method, metric]
-                    p = ttest_ind_from_stats(null_mean, null_std, n_trials, method_mean, method_std, n_trials, False)[1]
+                    if statistical_test == 'Whelch':
+                        p = ttest_ind_from_stats(null_mean, null_std, n, method_mean, method_std, n, False)[1]
+                    else:
+                        p = ks_2samp(null_samples.to_numpy(), method_samples.to_numpy())[-1]
 
                     # bold statistical ties for best
                     if p >= 0.05 and i_best != i_method:
@@ -152,7 +157,7 @@ def generative_analysis():
 
     # build tables
     with open(os.path.join('assets', 'generative_table.tex'), 'w') as f:
-        print(generative_tables(results, bold_statistical_ties=False), file=f)
+        print(generative_tables(results, bold_statistical_ties=True, statistical_test='K-S'), file=f)
 
     # generate plots
     generative_plots(experiment_dir, results)
