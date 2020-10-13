@@ -578,9 +578,9 @@ if __name__ == '__main__':
     # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
     #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM')
 
-    # # Variational Variance VAE (ours) + VBEM* prior
-    # vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
-    #                              num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=100)
+    # Variational Variance VAE (ours) + VBEM* prior
+    vae = VariationalVarianceVAE(dim_x=DIM_X, dim_z=DIM_Z, architecture=ARCH, batch_norm=BATCH_NORM,
+                                 num_mc_samples=NUM_MC_SAMPLES, min_dof=MIN_DOF, prior_type='VBEM*', k=10)
 
     # build the model. loss=[None] avoids warning "Output output_1 missing from loss dictionary".
     vae.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=5e-5), loss=[None], run_eagerly=False)
