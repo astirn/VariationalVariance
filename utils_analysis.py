@@ -158,12 +158,19 @@ def champions_club_table(champion_clubs):
     """
     assert isinstance(champion_clubs, list)
     champions_club = pd.concat(champion_clubs, axis=1)
-    for col in champions_club.columns:
-        winning_score = max(champions_club[col])
-        champions_club[col] = champions_club[col].astype('str')
-        for index, row in champions_club.iterrows():
-            if row[col] == str(winning_score):
-                champions_club.loc[index, col] = '\\textbf{' + row[col] + '}'
-            else:
-                champions_club.loc[index, col] = row[col]
-    return organize_regression_table(champions_club).T.to_latex(escape=False)
+    champions_club_condensed = pd.DataFrame()
+    columns = champions_club.columns
+    for i in range(0, len(columns), 2):
+        wins = [max(champions_club[columns[i]]), max(champions_club[columns[i + 1]])]
+        champions_club[columns[i]] = champions_club[columns[i]].astype('str')
+        champions_club[columns[i + 1]] = champions_club[columns[i + 1]].astype('str')
+        for j in range(2):
+            for index, row in champions_club.iterrows():
+                if row[columns[i + j]] == str(wins[j]):
+                    champions_club.loc[index, columns[i + j]] = '\\textbf{' + row[columns[i + j]] + '}'
+                else:
+                    champions_club.loc[index, columns[i + j]] = row[columns[i + j]]
+        champions_club_condensed[columns[i].replace(' Hard Wins', '')] = \
+            champions_club[columns[i]] + ' (' + champions_club[columns[i + 1]] + ')'
+
+    return organize_regression_table(champions_club_condensed).to_latex(escape=False)

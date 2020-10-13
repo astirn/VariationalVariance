@@ -166,19 +166,17 @@ def uci_regression_analysis():
 
     # make latex tables
     max_cols = 5
-    with open(os.path.join('assets', 'regression_uci_ll.tex'), 'w') as f:
-        table, ll_cc = build_table(results, 'LL', 'max', max_cols, bold_statistical_ties=False)
-        print(table, file=f)
-    with open(os.path.join('assets', 'regression_uci_rmse.tex'), 'w') as f:
-        table, rmse_cc = build_table(results, 'Mean RMSE', 'min', max_cols, bold_statistical_ties=False)
-        print(table, file=f)
-    with open(os.path.join('assets', 'regression_uci_var_bias.tex'), 'w') as f:
-        table, var_bias_cc = build_table(results, 'Var Bias', 'min', max_cols, bold_statistical_ties=False)
-        print(table, file=f)
+    champions_club = []
+    for metric in ['LL', 'Mean Bias', 'Mean RMSE', 'Var Bias', 'Var RMSE', 'Sample Bias', 'Sample RMSE']:
+        order = 'max' if metric == 'LL' else 'min'
+        with open(os.path.join('assets', 'regression_uci_' + metric.lower().replace(' ', '_') + '.tex'), 'w') as f:
+            table, cc = build_table(results, metric, order, max_cols, bold_statistical_ties=False)
+            print(table, file=f)
+        champions_club.append(cc)
 
     # print champions club
     with open(os.path.join('assets', 'regression_uci_champions_club.tex'), 'w') as f:
-        print(champions_club_table([ll_cc, rmse_cc, var_bias_cc]), file=f)
+        print(champions_club_table(champions_club), file=f)
 
 
 if __name__ == '__main__':
