@@ -17,7 +17,7 @@ declare -a MaximumLikelihoodAlgorithms=("Normal" "Student" "Detlefsen")
 
 # Bayesian algorithms and priors
 declare -a BayesianAlgorithms=("Gamma-Normal")
-declare -a PriorTypes=("VAP" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
+declare -a PriorTypes=("VAP" "Standard" "VAMP" "VAMP*" "xVAMP" "xVAMP*" "VBEM" "VBEM*")
 
 # loop over datasets
 for data in "${Datasets[@]}"; do
@@ -47,12 +47,12 @@ for data in "${Datasets[@]}"; do
       # run jobs in parallel if specified
       if [ $N -gt 1 ]; then
         python regression_experiments.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
-          --k 100 --parallel 1 &
+          --a 1.0 --b 0.001 --k 100 --parallel 1 &
 
       # otherwise, run job in foreground
       else
         python regression_experiments.py --dataset "$data" --algorithm $alg --prior_type $prior --mode $MODE \
-          --k 100 --parallel 0
+          --a 1.0 --b 0.001 --k 100 --parallel 0
       fi
 
       # check/wait for maximum jobs
