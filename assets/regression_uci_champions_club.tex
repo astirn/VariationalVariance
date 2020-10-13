@@ -1,16 +1,19 @@
-\begin{tabular}{llllllllllll}
+\begin{tabular}{lllllllll}
 \toprule
-Algorithm & Detlefsen &      Normal &     Student & \multicolumn{8}{l}{Gamma-Normal} \\
-Prior &       N/A &         N/A &         N/A &          VAP &    Standard &        VAMP &       VAMP* & xVAMP &      xVAMP* &         VBEM &       VBEM* \\
+             &       &                       LL &                 Mean Bias &                 Mean RMSE &        Var Bias &                 Var RMSE &      Sample Bias &     Sample RMSE \\
+Algorithm & Prior &                          &                           &                           &                 &                          &                  &                 \\
 \midrule
-LL Hard Wins          &         0 &           0 &           3 &            0 &           0 &           0 &           0 &     1 &           1 &            0 &  \textbf{5} \\
-LL Soft Wins          &         0 &           3 &  \textbf{7} &            4 &           0 &           3 &           3 &     4 &           4 &            1 &  \textbf{7} \\
-Mean RMSE Hard Wins   &         1 &           2 &           0 &            0 &           0 &           0 &           1 &     0 &           0 &   \textbf{5} &           1 \\
-Mean RMSE Soft Wins   &         1 &           7 &           6 &            6 &           6 &           8 &           8 &     7 &           7 &  \textbf{10} &           7 \\
-Var Bias Hard Wins    &         0 &           1 &           0 &            0 &  \textbf{2} &           1 &  \textbf{2} &     1 &           1 &            0 &  \textbf{2} \\
-Var Bias Soft Wins    &         0 &           6 &           5 &            7 &           6 &           7 &           7 &     6 &  \textbf{8} &            0 &           5 \\
-Sample RMSE Hard Wins &         0 &  \textbf{3} &           2 &            0 &           0 &           1 &           2 &     2 &           0 &            0 &           0 \\
-Sample RMSE Soft Wins &         0 &           6 &           5 &            5 &           5 &  \textbf{9} &  \textbf{9} &     6 &           6 &            0 &           5 \\
+Detlefsen & N/A &                    0 (0) &                     2 (3) &                     1 (1) &           0 (0) &                    0 (1) &            0 (4) &           0 (0) \\
+Normal & N/A &                    0 (3) &                     1 (7) &                     2 (7) &           1 (6) &                    2 (7) &            2 (9) &  \textbf{3} (6) \\
+Student & N/A &           3 (\textbf{7}) &                     0 (7) &                     0 (6) &           0 (5) &                    0 (3) &            0 (9) &           2 (5) \\
+Gamma-Normal & VAP &                    0 (4) &                     0 (9) &                     0 (6) &           0 (7) &                    0 (4) &   \textbf{3} (9) &           0 (5) \\
+             & Standard &                    0 (0) &                     0 (7) &                     0 (6) &  \textbf{2} (6) &                    0 (5) &            0 (7) &           0 (5) \\
+             & VAMP &                    0 (3) &  \textbf{3} (\textbf{10}) &                     0 (8) &           1 (7) &  \textbf{3} (\textbf{9}) &  1 (\textbf{10}) &  1 (\textbf{9}) \\
+             & VAMP* &                    0 (3) &           0 (\textbf{10}) &                     1 (8) &  \textbf{2} (7) &           1 (\textbf{9}) &  0 (\textbf{10}) &  2 (\textbf{9}) \\
+             & xVAMP &                    1 (4) &                     2 (9) &                     0 (7) &           1 (6) &                    1 (7) &            0 (9) &           2 (6) \\
+             & xVAMP* &                    1 (4) &                     1 (9) &                     0 (7) &  1 (\textbf{8}) &                    0 (8) &            1 (9) &           0 (6) \\
+             & VBEM &                    0 (1) &           0 (\textbf{10}) &  \textbf{5} (\textbf{10}) &           0 (0) &                    2 (6) &            1 (9) &           0 (0) \\
+             & VBEM* &  \textbf{5} (\textbf{7}) &                     1 (9) &                     1 (7) &  \textbf{2} (5) &                    1 (7) &            2 (9) &           0 (5) \\
 \bottomrule
 \end{tabular}
 
