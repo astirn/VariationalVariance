@@ -114,7 +114,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
         clip_value = 5.0
     else:
         batch_size = 250
-        epochs = 100
+        epochs = 1000
         patience = 50
         clip_value = None
 
