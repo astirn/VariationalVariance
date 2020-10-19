@@ -17,14 +17,23 @@ def string_table(df):
     return df
 
 
-def generative_tables(results, bold_statistical_ties, statistical_test):
-    assert statistical_test in {'Whelch', 'K-S'}
+def keep_fashion(results):
+    return results[results.Dataset == 'fashion mnist']
+
+
+def keep_mnist(results):
+    return results[results.Dataset == 'mnist']
+
+
+def generative_tables(results, bold_statistical_ties, stat_test, fn=None):
+    assert stat_test in {'Whelch', 'K-S'}
+
+    # apply any processing function
+    if fn is not None:
+        results = fn(results)
 
     # drop non-reported columns
     results = results.drop(['Best Epoch'], axis=1)
-
-    # drop svhn results for now
-    results = results[results.Dataset != 'svhn cropped']  # TODO: remove this
 
     # get number of trials
     n = max(results.index) + 1
@@ -75,7 +84,7 @@ def generative_tables(results, bold_statistical_ties, statistical_test):
                     method_samples = results[(results.Dataset == dataset) & (results.Method == method)][metric]
                     method_mean = mean.loc[i_method, metric]
                     method_std = std.loc[i_method, metric]
-                    if statistical_test == 'Whelch':
+                    if stat_test == 'Whelch':
                         p = ttest_ind_from_stats(null_mean, null_std, n, method_mean, method_std, n, False)[1]
                     else:
                         p = ks_2samp(null_samples.to_numpy(), method_samples.to_numpy())[-1]
@@ -88,7 +97,11 @@ def generative_tables(results, bold_statistical_ties, statistical_test):
     # make the table pretty
     df.Method = pd.Categorical(df.Method, categories=[method['name'] for method in METHODS])
     df = df.sort_values('Method')
-    df = df.set_index(keys=['Dataset', 'Method']).sort_index()
+    if len(df['Dataset'].unique()) == 1:
+        del df['Dataset']
+        df = df.set_index(keys=['Method']).sort_index()
+    else:
+        df = df.set_index(keys=['Dataset', 'Method']).sort_index()
     df = df[['LL', 'Mean RMSE', 'Var Bias', 'Sample RMSE']]
     return df.to_latex(escape=False)
 
@@ -97,7 +110,20 @@ def image_reshape(x):
     return np.reshape(tf.transpose(x, [1, 0, 2, 3]), [x.shape[1], -1, x.shape[-1]])
 
 
-def generative_plots(experiment_dir, results):
+def generative_plots(experiment_dir, results, abridge=True):
+
+    # select only a few methods for report
+    if abridge:
+        step = 10
+        results = results[results.Method.isin(['Fixed-Var. VAE (1.0)',
+                                               'Fixed-Var. VAE (0.001)',
+                                               'VAE',
+                                               'MAP-VAE',
+                                               'Student-VAE',
+                                               'V3AE-Gamma',
+                                               'V3AE-VBEM*'])]
+    else:
+        step = 2
 
     # loop over the experiments and methods
     for dataset in results['Dataset'].unique():
@@ -105,9 +131,14 @@ def generative_plots(experiment_dir, results):
         # get methods
         methods = results[results.Dataset == dataset]['Method'].unique()
 
+        # configure plots to have borders
+        plt.rcParams["axes.edgecolor"] = "0.15"
+        plt.rcParams["axes.linewidth"] = 0.25
+
         # initialize figure
-        fig, ax = plt.subplots(len(methods), 1, figsize=(16, 1.3 * len(methods)))
-        plt.subplots_adjust(left=0.03, bottom=0.01, right=0.99, top=0.99, wspace=0.0, hspace=0.0)
+        sample_scale = 0.5
+        fig, ax = plt.subplots(len(methods), 1, figsize=(sample_scale * 100 / step, 4 * sample_scale * len(methods)))
+        plt.subplots_adjust(left=0.01 * step, bottom=0.01, right=0.99, top=0.99, wspace=0.0, hspace=0.0)
 
         # loop over the methods in the specified order
         i = -1
@@ -123,22 +154,27 @@ def generative_plots(experiment_dir, results):
                 plots = pickle.load(f)
 
             # grab original data
-            x = np.squeeze(image_reshape(plots['x'][0::2]))
+            x = np.squeeze(image_reshape(plots['x'][0::step]))
 
             # grab the mean, std, and samples
-            best_trial = results[(results.Dataset == dataset) & (results.Method == method)]['LL'].idxmin()
-            mean = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['mean'][0::2]))
-            std = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['std'][0::2]))
+            i_plot = results[(results.Dataset == dataset) & (results.Method == method)]['Sample RMSE'].idxmin()
+            mean = np.squeeze(image_reshape(plots['reconstruction'][i_plot]['mean'][0::step]))
+            std = np.squeeze(image_reshape(plots['reconstruction'][i_plot]['std'][0::step]))
             if len(std.shape) == 3:
                 std = 1 - std
-            sample = np.squeeze(image_reshape(plots['reconstruction'][best_trial]['sample'][0::2]))
+            sample = np.squeeze(image_reshape(plots['reconstruction'][i_plot]['sample'][0::step]))
             ax[i].imshow(np.concatenate((x, mean, std, sample), axis=0), vmin=0, vmax=1, cmap='Greys')
             ax[i].set_xticks([])
             ax[i].set_yticks([])
-            ax[i].set_ylabel(method, fontsize=8)
+            if method == 'Fixed-Var. VAE (1.0)':
+                method = 'VAE ($\\sigma^2 = 1.0$)'
+            if method == 'Fixed-Var. VAE (0.001)':
+                method = 'VAE ($\\sigma^2 = 0.001$)'
+            ax[i].set_ylabel(method, fontsize=16)
 
         # save figure
-        fig.savefig(os.path.join('assets', 'fig_vae_samples_' + dataset + '.pdf'))
+        postfix = '_abridged' if abridge else ''
+        fig.savefig(os.path.join('assets', 'fig_vae_samples_' + dataset + postfix + '.pdf').replace(' ', '_'))
 
 
 def generative_analysis():
@@ -155,12 +191,20 @@ def generative_analysis():
         logger['Dataset'] = dataset.replace('_', ' ')
         results = results.append(logger)
 
+    # drop svhn results for now
+    results = results[results.Dataset != 'svhn cropped']  # TODO: get results and remove this
+
     # build tables
     with open(os.path.join('assets', 'generative_table.tex'), 'w') as f:
-        print(generative_tables(results, bold_statistical_ties=True, statistical_test='K-S'), file=f)
+        print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S'), file=f)
+    with open(os.path.join('assets', 'generative_table_fashion_mnist.tex'), 'w') as f:
+        print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_fashion), file=f)
+    with open(os.path.join('assets', 'generative_table_mnist.tex'), 'w') as f:
+        print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_mnist), file=f)
 
     # generate plots
-    generative_plots(experiment_dir, results)
+    generative_plots(experiment_dir, results, abridge=False)
+    generative_plots(experiment_dir, results, abridge=True)
 
 
 if __name__ == '__main__':
