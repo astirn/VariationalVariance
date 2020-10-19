@@ -218,6 +218,3 @@ if __name__ == '__main__':
 
     # run analysis accordingly
     generative_analysis()
-
-    # hold the plots
-    plt.show()
