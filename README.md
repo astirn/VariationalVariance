@@ -1,7 +1,7 @@
 # Variational Variance
 
 This repository is the official implementation of
-[Variational Variance: Simple, Reliable, Calibrated Heteroscedastic Noise Variance Parameterization](https://arxiv.org/). 
+[Variational Variance: Simple, Reliable, Calibrated Heteroscedastic Noise Variance Parameterization](https://arxiv.org/abs/2006.04910). 
 
 We include some [code](https://github.com/SkafteNicki/john) files from
 [Reliable training and estimation of variance networks](https://arxiv.org/abs/1906.03260)
