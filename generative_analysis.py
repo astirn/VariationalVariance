@@ -175,6 +175,8 @@ def generative_plots(experiment_dir, results, abridge=True):
         # save figure
         postfix = '_abridged' if abridge else ''
         fig.savefig(os.path.join('assets', 'fig_vae_samples_' + dataset + postfix + '.pdf').replace(' ', '_'))
+        if not abridge:
+            fig.savefig(os.path.join('assets', 'fig_vae_samples_' + dataset + postfix + '.png').replace(' ', '_'))
 
 
 def generative_analysis():
