@@ -30,7 +30,7 @@ def pre_process_data(ds, info, px_family):
                       num_parallel_calls=16)
     if 'Normal' in px_family:
         return ds.map(lambda d: {'image': tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                 'label': d['label']},
+                                 'label': d['label'] if 'label' in d.keys() else tf.random.categorical(tf.ones([1, 10]), 1)},
                       num_parallel_calls=16)
 
 

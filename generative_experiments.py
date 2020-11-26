@@ -137,15 +137,18 @@ def run_vae_experiments(method, dataset, num_trials, mode):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+        # get number of classes
+        num_classes = info.features['label'].num_classes if 'label' in info.features.keys() else 10
+
         # get prior parameters for precision
         a, b, u = precision_prior_params(data=train_set,
-                                         num_classes=info.features['label'].num_classes,
+                                         num_classes=num_classes,
                                          pseudo_inputs_per_class=10)
 
         # get sub-set of test set for results plotting
         if plotter['x'] is None:
             plotter['x'] = precision_prior_params(data=test_set,
-                                                  num_classes=info.features['label'].num_classes,
+                                                  num_classes=num_classes,
                                                   pseudo_inputs_per_class=10)[-1]
 
         # baselines with separate code bases
