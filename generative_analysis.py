@@ -25,6 +25,10 @@ def keep_mnist(results):
     return results[results.Dataset == 'mnist']
 
 
+def keep_svhn(results):
+    return results[results.Dataset == 'svhn cropped']
+
+
 def generative_tables(results, bold_statistical_ties, stat_test, fn=None):
     assert stat_test in {'Whelch', 'K-S'}
 
@@ -193,9 +197,6 @@ def generative_analysis():
         logger['Dataset'] = dataset.replace('_', ' ')
         results = results.append(logger)
 
-    # drop svhn results for now
-    results = results[results.Dataset != 'svhn cropped']  # TODO: get results and remove this
-
     # build tables
     with open(os.path.join('assets', 'generative_table.tex'), 'w') as f:
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S'), file=f)
@@ -203,6 +204,8 @@ def generative_analysis():
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_fashion), file=f)
     with open(os.path.join('assets', 'generative_table_mnist.tex'), 'w') as f:
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_mnist), file=f)
+    with open(os.path.join('assets', 'generative_table_svhn.tex'), 'w') as f:
+        print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_svhn), file=f)
 
     # generate plots
     generative_plots(experiment_dir, results, abridge=False)
