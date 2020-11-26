@@ -57,32 +57,26 @@ def decoder_dense(dim_in, dim_out, batch_norm, final_activation, name):
 def encoder_convolution(dim_in, dim_out, _, name):
     return tf.keras.Sequential(name=name, layers=[
         tf.keras.Input(shape=dim_in, dtype=tf.float32),
-        tf.keras.layers.Conv2D(filters=32, kernel_size=5, strides=1, padding='same'),
-        tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same'),
-        tf.keras.layers.ELU(),
-        tf.keras.layers.Conv2D(filters=64, kernel_size=3, strides=1, padding='same'),
-        tf.keras.layers.MaxPool2D(pool_size=3, strides=2, padding='same'),
-        tf.keras.layers.ELU(),
+        tf.keras.layers.Conv2D(filters=32, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(filters=32, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2D(filters=64, kernel_size=4, strides=2, padding='same', activation='relu'),
         tf.keras.layers.Flatten(),
-        tf.keras.layers.Dense(units=128),
-        tf.keras.layers.ELU(),
+        tf.keras.layers.Dense(units=256, activation='relu'),
         tf.keras.layers.Dense(units=dim_out)])
 
 
 def decoder_convolution(dim_in, dim_out, _, final_activation, name):
+    first_conv_dim = (dim_out[0] // 2 ** 4, dim_out[1] // 2 ** 4, 64)
     return tf.keras.Sequential(name=name, layers=[
         tf.keras.Input(shape=dim_in, dtype=tf.float32),
-        tf.keras.layers.Dense(units=128),
-        tf.keras.layers.ELU(),
-        tf.keras.layers.Dense(units=64 * dim_out[0] // 4 * dim_out[1] // 4),
-        tf.keras.layers.ELU(),
-        tf.keras.layers.Reshape((dim_out[0] // 4, dim_out[1] // 4, 64)),
-        tf.keras.layers.Conv2DTranspose(filters=32, kernel_size=3, strides=1, padding='same'),
-        tf.keras.layers.UpSampling2D(interpolation='bilinear', data_format='channels_last'),
-        tf.keras.layers.ELU(),
-        tf.keras.layers.Conv2DTranspose(filters=dim_out[-1], kernel_size=5, strides=1, activation=final_activation,
-                                        padding='same'),
-        tf.keras.layers.UpSampling2D(interpolation='bilinear', data_format='channels_last'),
+        tf.keras.layers.Dense(units=256, activation='relu'),
+        tf.keras.layers.Dense(units=np.prod(first_conv_dim), activation='relu'),
+        tf.keras.layers.Reshape((dim_out[0] // 2 ** 4, dim_out[1] // 2 ** 4, 64)),
+        tf.keras.layers.Conv2DTranspose(filters=64, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2DTranspose(filters=32, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2DTranspose(filters=32, kernel_size=4, strides=2, padding='same', activation='relu'),
+        tf.keras.layers.Conv2DTranspose(filters=dim_out[-1], kernel_size=4, strides=2, padding='same', activation=final_activation),
         tf.keras.layers.Flatten()])
 
 
