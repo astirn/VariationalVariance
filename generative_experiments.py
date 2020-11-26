@@ -68,9 +68,9 @@ METHODS = [
 ]
 
 # latent dimension per data set
-DIM_Z = {'mnist': 10, 'fashion_mnist': 25, 'svhn_cropped': 50}
-ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'convolution'}
-NUM_MC_SAMPLES = 20
+DIM_Z = {'mnist': 10, 'fashion_mnist': 25, 'svhn_cropped': 32, 'celeb_a': 32}
+ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'convolution', 'celeb_a': 'convolution'}
+NUM_MC_SAMPLES = {'mnist': 20, 'fashion_mnist': 20, 'svhn_cropped': 5, 'celeb_a': 5}
 
 
 def run_vae_experiments(method, dataset, num_trials, mode):
@@ -125,6 +125,11 @@ def run_vae_experiments(method, dataset, num_trials, mode):
     for t in range(t_start + 1, num_trials):
         print('\n***** Trial {:d}/{:d}:'.format(t + 1, num_trials), method['name'], '*****')
 
+        # skip batch normalization for convolution architectures
+        if ARCHITECTURE[dataset] == 'convolution' and '+ BN' in method['name']:
+            print('skipping batch normalization--not supported with convolution architecture')
+            continue
+
         # set random number seeds
         np.random.seed(t)
         tf.random.set_seed(t)
@@ -160,7 +165,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
             # update kwargs accordingly
             kwargs = copy.deepcopy(method['kwargs'])
             kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
-                           'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES, 'u': u})
+                           'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES[dataset], 'u': u})
 
             # configure and compile model
             mdl = method['mdl'](**kwargs)
@@ -182,6 +187,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
 
             # retrieve best attained posterior predictive log likelihood on the validation data
             i_best = np.nanargmax(hist.history['val_LPPL'])
+            elbo = hist.history['val_ELBO'][i_best]
             lppl = hist.history['val_LPPL'][i_best]
 
             # log scalar performance metrics
@@ -212,7 +218,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
             sample_mse /= num_pixels
 
             # assemble metric and reconstruction dictionaries
-            metrics = {'Method': method['name'], 'LL': lppl, 'Best Epoch': i_best + 1,
+            metrics = {'Method': method['name'], 'ELBO': elbo, 'LL': lppl, 'Best Epoch': i_best + 1,
                        'Mean Bias': mean_bias.numpy(), 'Mean RMSE': mean_mse.numpy() ** 0.5,
                        'Var Bias': var_bias.numpy(), 'Var RMSE': var_mse.numpy() ** 0.5,
                        'Sample Bias': sample_bias.numpy(), 'Sample RMSE': sample_mse.numpy() ** 0.5}
@@ -239,8 +245,8 @@ if __name__ == '__main__':
 
     # script arguments
     parser = argparse.ArgumentParser()
-    parser.add_argument('--dataset', type=str, default='mnist', help='www.tensorflow.org/datasets/catalog/overview')
-    parser.add_argument('--num_trials', type=int, default=5, help='number of trials')
+    parser.add_argument('--dataset', type=str, default='celeb_a', help='www.tensorflow.org/datasets/catalog/overview')
+    parser.add_argument('--num_trials', type=int, default=1, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
     args = parser.parse_args()
