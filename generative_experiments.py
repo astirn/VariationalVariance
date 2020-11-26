@@ -39,8 +39,8 @@ METHODS = [
     {'name': 'VAE-Split + BN', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
 
-    # Detlefsen Baseline
-    {'name': 'Detlefsen', 'kwargs': dict()},
+    # # Detlefsen Baseline
+    # {'name': 'Detlefsen', 'kwargs': dict()},
 
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
