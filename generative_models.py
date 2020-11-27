@@ -101,6 +101,11 @@ def mixture_network(dim_in, dim_out, batch_norm, name):
 
 
 def precision_prior_params(data, num_classes, pseudo_inputs_per_class):
+    if num_classes is None:
+        batch = next(data.as_numpy_iterator())
+        u = tf.random.shuffle(batch['image'])[:pseudo_inputs_per_class * 10]
+        return None, None, u
+
     # load the data into RAM to support sample with replacement
     x = []
     y = []

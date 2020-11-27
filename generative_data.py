@@ -40,8 +40,9 @@ def pre_process_data(ds, info, px_family):
                           num_parallel_calls=16)
 
 
-def configure_data_set(ds, info, px_family, batch_size, shuffle):
+def configure_data_set(data_set_name, ds, info, px_family, batch_size, shuffle):
     """
+    :param data_set_name: data set name
     :param ds: TensorFlow data set object
     :param info: TensorFlow DatasetInfo object
     :param px_family: data distribution assumption (e.g. Bernoulli, Gaussian, etc...)
@@ -50,7 +51,7 @@ def configure_data_set(ds, info, px_family, batch_size, shuffle):
     :return: a configured TensorFlow data set object
     """
     # enable shuffling and repeats
-    ds = ds.shuffle(1000 * batch_size, reshuffle_each_iteration=shuffle)
+    ds = ds.shuffle(10 * batch_size if data_set_name == 'celeb_a' else 1000 * batch_size, reshuffle_each_iteration=shuffle)
 
     # batch the data before pre-processing
     ds = ds.batch(batch_size)
@@ -80,7 +81,7 @@ def load_data_set(data_set_name, px_family, batch_size=100):
     test_ds = tfds.load(name=data_set_name, split=tfds.Split.TEST, with_info=False)
 
     # create and configure the data sets
-    train_ds = configure_data_set(train_ds, info, px_family, batch_size, shuffle=True)
-    test_ds = configure_data_set(test_ds, info, px_family, batch_size, shuffle=False)
+    train_ds = configure_data_set(data_set_name, train_ds, info, px_family, batch_size, shuffle=True)
+    test_ds = configure_data_set(data_set_name, test_ds, info, px_family, batch_size, shuffle=False)
 
     return train_ds, test_ds, info
