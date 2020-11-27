@@ -29,9 +29,15 @@ def pre_process_data(ds, info, px_family):
                                  'label': d['label']},
                       num_parallel_calls=16)
     if 'Normal' in px_family:
-        return ds.map(lambda d: {'image': tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
-                                 'label': d['label'] if 'label' in d.keys() else tf.random.categorical(tf.ones([1, 10]), 1)},
-                      num_parallel_calls=16)
+        if max(ds.element_spec['image'].shape.as_list()[1:-1]) > 50:
+            return ds.map(lambda d: {'image': tf.image.resize(tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
+                                                              size=[50, 50], preserve_aspect_ratio=True, antialias=True),
+                                     'label': d['label'] if 'label' in d.keys() else tf.random.categorical(tf.ones([1, 10]), 1)},
+                          num_parallel_calls=16)
+        else:
+            return ds.map(lambda d: {'image': tf.cast(d['image'], dtype=tf.float32) / d['image'].dtype.max,
+                                     'label': d['label'] if 'label' in d.keys() else tf.random.categorical(tf.ones([1, 10]), 1)},
+                          num_parallel_calls=16)
 
 
 def configure_data_set(ds, info, px_family, batch_size, shuffle):
