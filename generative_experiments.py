@@ -138,7 +138,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
         torch.backends.cudnn.benchmark = False
 
         # get number of classes
-        num_classes = info.features['label'].num_classes if 'label' in info.features.keys() else 10
+        num_classes = info.features['label'].num_classes if 'label' in info.features.keys() else None
 
         # get prior parameters for precision
         a, b, u = precision_prior_params(data=train_set,
@@ -167,7 +167,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
 
             # update kwargs accordingly
             kwargs = copy.deepcopy(method['kwargs'])
-            kwargs.update({'dim_x': info.features['image'].shape, 'dim_z': DIM_Z[dataset],
+            kwargs.update({'dim_x': test_set.element_spec['image'].shape.as_list()[1:], 'dim_z': DIM_Z[dataset],
                            'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES[dataset], 'u': u})
 
             # configure and compile model
