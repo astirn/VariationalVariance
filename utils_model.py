@@ -162,8 +162,11 @@ class VariationalVariance(object):
 
             # prior's mixture components--shape will be [# components, # MC samples, event shape]
             if 'VAMP' in self.prior_type:
-                alpha = tf.transpose(tf.vectorized_map(lambda u: self.alpha(u), vamp_samples), [1, 0, 2])
-                beta = tf.transpose(tf.vectorized_map(lambda u: self.beta(u), vamp_samples), [1, 0, 2])
+                vamp_samples = tf.reshape(vamp_samples, [-1, self.dim_z])
+                alpha = tf.reshape(self.alpha(vamp_samples), [self.num_mc_samples, -1, np.prod(self.dim_x)])
+                alpha = tf.transpose(alpha, [1, 0, 2])
+                beta = tf.reshape(self.beta(vamp_samples), [self.num_mc_samples, -1, np.prod(self.dim_x)])
+                beta = tf.transpose(beta, [1, 0, 2])
             else:
                 alpha = tf.expand_dims(tf.nn.softplus(self.u), axis=1)
                 beta = tf.expand_dims(tf.nn.softplus(self.v), axis=1)

@@ -69,7 +69,7 @@ METHODS = [
 
 # latent dimension per data set
 DIM_Z = {'mnist': 10, 'fashion_mnist': 25, 'svhn_cropped': 32, 'celeb_a': 32}
-ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'convolution', 'celeb_a': 'convolution'}
+ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'dense', 'celeb_a': 'dense'}
 NUM_MC_SAMPLES = {'mnist': 20, 'fashion_mnist': 20, 'svhn_cropped': 5, 'celeb_a': 5}
 
 
@@ -109,12 +109,12 @@ def run_vae_experiments(method, dataset, num_trials, mode):
     # common configurations
     if method['kwargs'].get('prior_type') in {'VAMP', 'VAMP*', 'xVAMP', 'xVAMP*', 'VBEM', 'VBEM*'}:
         batch_size = 125
-        epochs = 500
+        epochs = 250 if dataset == 'celeb_a' else 500
         patience = 25
         clip_value = 5.0
     else:
         batch_size = 250
-        epochs = 1000
+        epochs = 500 if dataset == 'celeb_a' else 1000
         patience = 50
         clip_value = None
 
