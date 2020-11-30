@@ -40,6 +40,7 @@ METHODS = [
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
 
     # Detlefsen Baseline
+    {'name': 'Detlefsen (10.0)', 'kwargs': {'fixed_var': 10.0}},
     {'name': 'Detlefsen (0.25)', 'kwargs': {'fixed_var': 0.25}},
     {'name': 'Detlefsen (0.001)', 'kwargs': {'fixed_var': 0.001}},
 

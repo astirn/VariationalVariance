@@ -29,6 +29,10 @@ def keep_svhn(results):
     return results[results.Dataset == 'svhn cropped']
 
 
+def keep_celeb(results):
+    return results[results.Dataset == 'celeb a']
+
+
 def generative_tables(results, bold_statistical_ties, stat_test, fn=None):
     assert stat_test in {'Whelch', 'K-S'}
 
@@ -186,7 +190,7 @@ def generative_plots(experiment_dir, results, abridge=True):
 def generative_analysis():
 
     # experiment directory
-    experiment_dir = os.path.join('results', 'vae')
+    experiment_dir = os.path.join('results', 'vae', 'dense')
 
     # load results for reach data set
     results = pd.DataFrame()
@@ -204,8 +208,10 @@ def generative_analysis():
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_fashion), file=f)
     with open(os.path.join('assets', 'generative_table_mnist.tex'), 'w') as f:
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_mnist), file=f)
-    with open(os.path.join('assets', 'generative_table_svhn.tex'), 'w') as f:
+    with open(os.path.join('assets', 'generative_table_svhn_cropped.tex'), 'w') as f:
         print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_svhn), file=f)
+    with open(os.path.join('assets', 'generative_table_celeb_a.tex'), 'w') as f:
+        print(generative_tables(results, bold_statistical_ties=True, stat_test='K-S', fn=keep_celeb), file=f)
 
     # generate plots
     generative_plots(experiment_dir, results, abridge=False)
