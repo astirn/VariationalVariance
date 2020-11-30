@@ -39,8 +39,9 @@ METHODS = [
     {'name': 'VAE-Split + BN', 'mdl': NormalVAE,
      'kwargs': {'split_decoder': True, 'batch_norm': True}},
 
-    # # Detlefsen Baseline
-    # {'name': 'Detlefsen', 'kwargs': dict()},
+    # Detlefsen Baseline
+    {'name': 'Detlefsen (0.25)', 'kwargs': {'fixed_var': 0.25}},
+    {'name': 'Detlefsen (0.001)', 'kwargs': {'fixed_var': 0.001}},
 
     # Takahashi baselines
     {'name': 'MAP-VAE', 'mdl': NormalVAE,
@@ -69,14 +70,13 @@ METHODS = [
 
 # latent dimension per data set
 DIM_Z = {'mnist': 10, 'fashion_mnist': 25, 'svhn_cropped': 32, 'celeb_a': 32}
-ARCHITECTURE = {'mnist': 'dense', 'fashion_mnist': 'dense', 'svhn_cropped': 'dense', 'celeb_a': 'dense'}
 NUM_MC_SAMPLES = {'mnist': 20, 'fashion_mnist': 20, 'svhn_cropped': 5, 'celeb_a': 5}
 
 
-def run_vae_experiments(method, dataset, num_trials, mode):
+def run_vae_experiments(method, dataset, architecture, num_trials, mode):
 
     # establish experiment directory
-    experiment_dir = 'vae'
+    experiment_dir = os.path.join('vae', architecture)
     os.makedirs(os.path.join('results', experiment_dir), exist_ok=True)
 
     # make sure results subdirectory exists
@@ -126,8 +126,13 @@ def run_vae_experiments(method, dataset, num_trials, mode):
         print('\n***** Trial {:d}/{:d}:'.format(t + 1, num_trials), method['name'], '*****')
 
         # skip batch normalization for convolution architectures
-        if ARCHITECTURE[dataset] == 'convolution' and '+ BN' in method['name']:
+        if architecture == 'convolution' and '+ BN' in method['name']:
             print('skipping batch normalization--not supported with convolution architecture')
+            continue
+
+        # skip Detlefsen for convolution architecture
+        if architecture == 'convolution' and method['name'] == 'Detlefsen':
+            print('skipping Detlefsen--not supported with convolution architecture')
             continue
 
         # set random number seeds
@@ -152,14 +157,15 @@ def run_vae_experiments(method, dataset, num_trials, mode):
                                                   pseudo_inputs_per_class=10)[-1]
 
         # baselines with separate code bases
-        if method['name'] == 'Detlefsen':
+        if 'Detlefsen' in method['name']:
 
             # run detlefsen baseline
             x_train = np.concatenate([x['image'] for x in train_set.as_numpy_iterator()], axis=0)
             x_test = np.concatenate([x['image'] for x in test_set.as_numpy_iterator()], axis=0)
             hist = None
             metrics, reconstruction = detlefsen_vae_baseline(x_train=x_train, x_test=x_test, x_plot=plotter['x'],
-                                                             dim_z=DIM_Z[dataset], epochs=epochs, batch_size=batch_size)
+                                                             dim_z=DIM_Z[dataset], epochs=epochs, batch_size=batch_size,
+                                                             fixed_var=method['kwargs'].get('fixed_var'))
             metrics.update({'Method': method['name']})
 
         # otherwise run our methods
@@ -168,7 +174,7 @@ def run_vae_experiments(method, dataset, num_trials, mode):
             # update kwargs accordingly
             kwargs = copy.deepcopy(method['kwargs'])
             kwargs.update({'dim_x': test_set.element_spec['image'].shape.as_list()[1:], 'dim_z': DIM_Z[dataset],
-                           'architecture': ARCHITECTURE[dataset], 'num_mc_samples': NUM_MC_SAMPLES[dataset], 'u': u})
+                           'architecture': architecture, 'num_mc_samples': NUM_MC_SAMPLES[dataset], 'u': u})
 
             # configure and compile model
             mdl = method['mdl'](**kwargs)
@@ -249,6 +255,7 @@ if __name__ == '__main__':
     # script arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, default='celeb_a', help='www.tensorflow.org/datasets/catalog/overview')
+    parser.add_argument('--architecture', type=str, default='dense', help='{dense, convolution}')
     parser.add_argument('--num_trials', type=int, default=1, help='number of trials')
     parser.add_argument('--mode', type=str, default='resume', help='mode in {replace, resume}')
     parser.add_argument('--seed_init', default=1234, type=int, help='random seed init, multiplied by trial number')
@@ -256,6 +263,7 @@ if __name__ == '__main__':
 
     # check inputs
     assert args.dataset in DIM_Z.keys()
+    assert args.architecture in {'dense', 'convolution'}
     assert args.mode in {'replace', 'resume'}
 
     # make result directory if it doesn't already exist
@@ -263,4 +271,4 @@ if __name__ == '__main__':
 
     # run experiments accordingly
     for m in METHODS:
-        run_vae_experiments(method=m, dataset=args.dataset, num_trials=args.num_trials, mode=args.mode)
+        run_vae_experiments(m, args.dataset, args.architecture, args.num_trials, args.mode)

@@ -266,10 +266,10 @@ class vae(basemodel):
 
 #%%
 class john(basemodel):
-    def __init__(self, in_size, direc, latent_size=2, cuda=True):
+    def __init__(self, in_size, direc, latent_size=2, cuda=True, fixed_var=10):
         super(john, self).__init__(in_size, direc, latent_size, cuda)
         self.opt_switch = 1
-        
+        self.fixed_var = fixed_var
         # self.enc_mu = nn.Sequential(nn.Linear(self.in_size, 512),
         #                             nn.LeakyReLU(),
         #                             nn.Linear(512, 256),
@@ -325,7 +325,7 @@ class john(basemodel):
             gamma_dist = D.Gamma(alpha+1e-6, beta+1e-6)
             samples_var = gamma_dist.rsample([20])
             x_var = (1.0/(samples_var+1e-6))
-            x_var = (1-s) * x_var + s*(10*torch.ones_like(x_var))
+            x_var = (1-s) * x_var + s*(self.fixed_var*torch.ones_like(x_var))
         else:
             x_var = (0.02**2)*torch.ones_like(x_mu)
             
@@ -481,9 +481,9 @@ class john(basemodel):
 #%%
 
 
-def detlefsen_vae_baseline(x_train, x_test, x_plot, dim_z, epochs, batch_size):
+def detlefsen_vae_baseline(x_train, x_test, x_plot, dim_z, epochs, batch_size, fixed_var):
     orig_shape = list(x_train.shape)
-    mdl = john(in_size=x_train.shape[1:], direc=None, latent_size=dim_z, cuda=True)
+    mdl = john(in_size=x_train.shape[1:], direc=None, latent_size=dim_z, cuda=True, fixed_var=fixed_var)
     x_train = np.reshape(x_train, [x_train.shape[0], -1])
     x_test = np.reshape(x_test, [x_test.shape[0], -1])
     x_plot = np.reshape(x_plot, [x_plot.shape[0], -1])
