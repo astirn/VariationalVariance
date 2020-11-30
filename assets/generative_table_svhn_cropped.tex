@@ -1,0 +1,24 @@
+\begin{tabular}{lllll}
+\toprule
+{} &                LL &         Mean RMSE &          Var Bias &       Sample RMSE \\
+Method                 &                   &                   &                   &                   \\
+\midrule
+Fixed-Var. VAE (1.0)   &          -2838.49 &           9.7e-02 &              0.99 &              1.01 \\
+Fixed-Var. VAE (0.001) &           3390.91 &  \textbf{5.4e-02} &          -1.9e-03 &  \textbf{6.2e-02} \\
+VAE                    &           5515.77 &           5.7e-02 &           1.7e-04 &           8.1e-02 \\
+VAE + BN               &           5138.23 &           6.0e-02 &           7.3e-05 &           8.6e-02 \\
+VAE-Split              &           5577.98 &           5.7e-02 &  \textbf{2.5e-05} &           8.1e-02 \\
+VAE-Split + BN         &           5079.07 &           6.2e-02 &           1.9e-04 &           8.9e-02 \\
+MAP-VAE                &           4836.06 &           5.9e-02 &          -1.1e-03 &           7.6e-02 \\
+Student-VAE            &  \textbf{5604.02} &           5.8e-02 &           8.0e-05 &           8.2e-02 \\
+V3AE-VAP               &           5578.98 &           5.7e-02 &           7.7e-05 &           8.1e-02 \\
+V3AE-Gamma             &           4980.98 &           5.9e-02 &          -1.4e-03 &           7.4e-02 \\
+V3AE-VAMP              &           4726.80 &           6.1e-02 &          -4.9e-04 &           8.4e-02 \\
+V3AE-VAMP*             &           4669.59 &           6.1e-02 &          -1.2e-04 &           8.6e-02 \\
+V3AE-xVAMP             &           4750.05 &           6.1e-02 &          -4.4e-04 &           8.3e-02 \\
+V3AE-xVAMP*            &           4689.77 &           6.1e-02 &          -2.0e-04 &           8.5e-02 \\
+V3AE-VBEM              &           2662.97 &           6.0e-02 &           2.5e-02 &              0.18 \\
+V3AE-VBEM*             &           4897.52 &           5.5e-02 &           1.1e-04 &           7.8e-02 \\
+\bottomrule
+\end{tabular}
+
